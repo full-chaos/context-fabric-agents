@@ -1,0 +1,137 @@
+name: contract-drift
+
+# CHAOS-6199. Daily: capture the live hosted MCP contract with the CI
+# principal and compare it with contracts/acr-mcp/snapshot.json. On a
+# difference, open or update the `contract-drift` PR carrying the diff; a
+# removed/renamed tool or tightened schema is labelled `major`.
+#
+# A missing credential is a RED run, never a skip. The credential is the
+# repository secret ACR_MCP_CI_BEARER (the ticket text says
+# ACR_MCP_LIVENESS_TOKEN; the secret that exists is ACR_MCP_CI_BEARER).
+# Nothing here prints the credential, response headers or bodies.
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: contract-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only used when GH_CI_TOKEN is absent; the PAT path ignores these.
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
+      # PRs opened with the default token do not start CI, so the PR would be
+      # unmergeable under branch protection. Prefer the CI token.
+      PR_TOKEN: ${{ secrets.GH_CI_TOKEN || github.token }}
+    steps:
+      - name: Require credential
+        run: |
+          if [ -z "$ACR_MCP_CI_BEARER" ]; then
+            echo "::error::ACR_MCP_CI_BEARER missing"
+            exit 1
+          fi
+          echo "::add-mask::$ACR_MCP_CI_BEARER"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Capture the live contract
+        run: |
+          go build -o "$RUNNER_TEMP/snapshot" ./cmd/snapshot
+          "$RUNNER_TEMP/snapshot" capture -out "$RUNNER_TEMP/new.json"
+
+      - name: Keep the capture
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: snapshot
+          path: ${{ runner.temp }}/new.json
+          if-no-files-found: error
+
+      - name: Compare with the committed snapshot
+        id: compare
+        run: |
+          set +e
+          "$RUNNER_TEMP/snapshot" diff -old contracts/acr-mcp/snapshot.json -new "$RUNNER_TEMP/new.json" > "$RUNNER_TEMP/report.md"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/report.md"
+          case "$code" in
+            0)  echo "drift=false" >> "$GITHUB_OUTPUT" ;;
+            10) echo "drift=true" >> "$GITHUB_OUTPUT" ;;
+            *)  echo "::error::snapshot diff failed (exit $code)"; exit 1 ;;
+          esac
+
+      - name: Open or update the contract-drift PR
+        if: steps.compare.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ env.PR_TOKEN }}
+          BASE: ${{ github.ref_name }}
+        run: |
+          sev=$(sed -n 's/^Severity: \*\*\(.*\)\*\*$/\1/p' "$RUNNER_TEMP/report.md")
+          [ -n "$sev" ] || { echo "::error::no severity in report"; exit 1; }
+
+          cp "$RUNNER_TEMP/new.json" contracts/acr-mcp/snapshot.json
+          git config user.name "contract-drift[bot]"
+          git config user.email "contract-drift@users.noreply.github.com"
+          git checkout -B contract-drift
+          git add contracts/acr-mcp/snapshot.json
+          git commit -m "chore(contracts): refresh hosted MCP contract snapshot"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" contract-drift:contract-drift
+
+          {
+            echo "The live hosted MCP contract differs from \`contracts/acr-mcp/snapshot.json\`."
+            echo
+            echo "## Drift"
+            echo
+            cat "$RUNNER_TEMP/report.md"
+            echo
+            if [ "$sev" = "major" ]; then
+              echo "**major**: a tool was removed or renamed, or an input schema was tightened. Update skills and client configs before merging, and cut a major release."
+              echo
+            fi
+            echo "Merging this PR acknowledges the change. Configs and skills may reference a new member only after this PR merges."
+            echo
+            echo "Captured by run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
+            echo
+            echo "## TEST-EVIDENCE"
+            echo
+            echo "Capture and diff ran in the run above. \`go test ./...\` runs in CI on this PR."
+            echo
+            echo "## RISK-NOTES"
+            echo
+            echo "Snapshot only; no code change. Severity: ${sev}."
+          } > "$RUNNER_TEMP/body.md"
+
+          for l in contract-drift major minor patch; do
+            gh label create "$l" --force --color ededed --description "hosted MCP contract drift" >/dev/null
+          done
+
+          existing=$(gh pr list --head contract-drift --base "$BASE" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --body-file "$RUNNER_TEMP/body.md" --add-label "contract-drift,$sev"
+            for l in major minor patch; do
+              [ "$l" = "$sev" ] || gh pr edit "$existing" --remove-label "$l" >/dev/null 2>&1 || true
+            done
+            echo "updated PR #$existing"
+          else
+            gh pr create --base "$BASE" --head contract-drift \
+              --title "chore(contracts): refresh hosted MCP contract snapshot" \
+              --body-file "$RUNNER_TEMP/body.md" \
+              --label "contract-drift" --label "$sev"
+          fi
