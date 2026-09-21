@@ -1,0 +1,12 @@
+# Dev Health hosted MCP server entry for Codex CLI (bearer variant).
+# Shape source: https://learn.chatgpt.com/docs/extend/mcp
+# Codex sends the value of the named environment variable as
+# "Authorization: Bearer <value>" on every request. Export the variable in the
+# shell that starts Codex; never write the token into this file. Place this
+# table in ~/.codex/config.toml (user scope) or .codex/config.toml (project
+# scope, requires trusting the project on first use).
+
+[mcp_servers.dev-health]
+url = "https://mcp.fullchaos.dev/mcp"
+bearer_token_env_var = "ACR_MCP_TOKEN"
+enabled = true
