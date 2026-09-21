@@ -33,12 +33,14 @@ jobs:
 
       - name: Negative control (no credential must be 401)
         run: |
-          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$ACR_MCP_URL" \
+          code=$(curl -sS -o neg.txt -D neg.hdr -w '%{http_code}' -X POST "$ACR_MCP_URL" \
             -H 'Content-Type: application/json' \
             -H 'Accept: application/json, text/event-stream' \
             -H 'MCP-Protocol-Version: 2026-07-28' \
             -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
           echo "unauthenticated status: $code"
+          grep -iE '^(server|cf-mitigated|www-authenticate|content-type):' neg.hdr || true
+          head -c 300 neg.txt; echo
           [ "$code" = "401" ] || { echo "::error::expected 401 without credential, got $code"; exit 1; }
 
       - name: Authenticated tools/list must be 200 with tools
