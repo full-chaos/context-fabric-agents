@@ -32,7 +32,7 @@ jobs:
       contents: write
       pull-requests: write
     env:
-      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER_UNSET_PROOF }}
       # PRs opened with the default token do not start CI, so the PR would be
       # unmergeable under branch protection. Prefer the CI token.
       PR_TOKEN: ${{ secrets.GH_CI_TOKEN || github.token }}
