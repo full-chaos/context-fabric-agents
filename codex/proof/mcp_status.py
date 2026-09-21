@@ -6,11 +6,12 @@ config). The `codex app-server` JSON-RPC method `mcpServerStatus/list` makes
 Codex itself connect to each configured MCP server and report the connection
 state, server info and tool catalog, with no LLM call and no OpenAI login.
 
-Usage: mcp_status.py <server-name> [--expect-tool NAME ...] [--expect-status STATUS]
+Usage: mcp_status.py <server-name> [--expect-tool NAME ...]
 
 Run with CODEX_HOME pointing at a directory holding config.toml. Prints one
-redacted JSON summary line. Exit 0 only if the server reports the expected
-runtime status and every expected tool. The bearer token is never read or
+redacted JSON summary line. Exit 0 only if tool discovery reported no error, the server
+reported its serverInfo, and every expected tool is listed. (runtimeStatus is
+null without a thread, so it is printed but not judged.) The bearer token is never read or
 printed by this script; Codex reads it from the environment.
 """
 import json
@@ -23,13 +24,11 @@ TIMEOUT_S = 60
 
 def main(argv):
     name = argv[1]
-    expect_tools, expect_status = [], "connected"
+    expect_tools = []
     i = 2
     while i < len(argv):
         if argv[i] == "--expect-tool":
             expect_tools.append(argv[i + 1])
-        elif argv[i] == "--expect-status":
-            expect_status = argv[i + 1]
         else:
             print("unknown arg " + argv[i], file=sys.stderr)
             return 2
@@ -100,7 +99,12 @@ def main(argv):
         "resources": len(found.get("resources", [])),
     }
     print(json.dumps(summary))
-    ok = found.get("runtimeStatus") == expect_status and all(t in tools for t in expect_tools)
+    ok = (
+        found.get("toolsError") is None
+        and bool(info.get("name"))
+        and bool(expect_tools)
+        and all(t in tools for t in expect_tools)
+    )
     return 0 if ok else 1
 
 
