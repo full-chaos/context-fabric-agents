@@ -1,8 +1,10 @@
 name: liveness
 
-# Placeholder. The real probes land in CHAOS-6204 / CHAOS-6205, and the
-# schedule is added there. Until then this job FAILS on purpose: a liveness
-# check that is not configured must not read as green.
+# CHAOS-6196 credential smoke. The full probe suite lands in CHAOS-6204 /
+# CHAOS-6205 and replaces this job. Until then this job proves the CI
+# credential works end to end: it fails if the secret or variable is missing,
+# if an unauthenticated call is not 401, or if the authenticated call is not
+# 200 with a non-empty tools list. Nothing here prints the bearer.
 on:
   workflow_dispatch:
 
@@ -12,8 +14,51 @@ jobs:
   liveness:
     name: liveness
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # 2026-07-28 is stateless: every call carries the _meta triple and an
+      # Mcp-Method header equal to the body method (SDK returns 400 otherwise).
+      BODY: '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"cfa-liveness","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}}'
+      ACR_MCP_URL: ${{ vars.ACR_MCP_URL }}
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
     steps:
-      - name: Not configured
+      - name: Require configuration
         run: |
-          echo "::error::liveness is not configured (CHAOS-6204, CHAOS-6205)"
-          exit 1
+          if [ -z "$ACR_MCP_URL" ]; then
+            echo "::error::repository variable ACR_MCP_URL is missing"
+            exit 1
+          fi
+          if [ -z "$ACR_MCP_CI_BEARER" ]; then
+            echo "::error::secret ACR_MCP_CI_BEARER is missing"
+            exit 1
+          fi
+          echo "::add-mask::$ACR_MCP_CI_BEARER"
+
+      - name: Negative control (no credential must be 401)
+        run: |
+          code=$(curl -sS -o neg.txt -D neg.hdr -w '%{http_code}' -X POST "$ACR_MCP_URL" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -H 'MCP-Protocol-Version: 2026-07-28' \
+            -H 'Mcp-Method: tools/list' \
+            -d "$BODY")
+          echo "unauthenticated status: $code"
+          grep -iE '^(server|cf-mitigated|www-authenticate|content-type):' neg.hdr || true
+          head -c 300 neg.txt; echo
+          [ "$code" = "401" ] || { echo "::error::expected 401 without credential, got $code"; exit 1; }
+
+      - name: Authenticated tools/list must be 200 with tools
+        run: |
+          code=$(curl -sS -o body.json -w '%{http_code}' -X POST "$ACR_MCP_URL" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -H 'MCP-Protocol-Version: 2026-07-28' \
+            -H 'Mcp-Method: tools/list' \
+            -H "Authorization: Bearer $ACR_MCP_CI_BEARER" \
+            -d "$BODY")
+          echo "authenticated status: $code"
+          [ "$code" = "200" ] || head -c 300 body.json; echo
+          [ "$code" = "200" ] || { echo "::error::expected 200 with credential, got $code"; exit 1; }
+          n=$(grep -o '"name"[[:space:]]*:[[:space:]]*"[a-z_]*"' body.json | sort -u | wc -l)
+          echo "tool-name-like fields: $n"
+          [ "$n" -ge 1 ] || { echo "::error::tools/list returned no tools"; exit 1; }
