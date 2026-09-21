@@ -16,6 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
+      # 2026-07-28 is stateless: every call carries the _meta triple and an
+      # Mcp-Method header equal to the body method (SDK returns 400 otherwise).
+      BODY: '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"cfa-liveness","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}}'
       ACR_MCP_URL: ${{ vars.ACR_MCP_URL }}
       ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
     steps:
@@ -37,7 +40,8 @@ jobs:
             -H 'Content-Type: application/json' \
             -H 'Accept: application/json, text/event-stream' \
             -H 'MCP-Protocol-Version: 2026-07-28' \
-            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+            -H 'Mcp-Method: tools/list' \
+            -d "$BODY")
           echo "unauthenticated status: $code"
           grep -iE '^(server|cf-mitigated|www-authenticate|content-type):' neg.hdr || true
           head -c 300 neg.txt; echo
@@ -49,9 +53,11 @@ jobs:
             -H 'Content-Type: application/json' \
             -H 'Accept: application/json, text/event-stream' \
             -H 'MCP-Protocol-Version: 2026-07-28' \
+            -H 'Mcp-Method: tools/list' \
             -H "Authorization: Bearer $ACR_MCP_CI_BEARER" \
-            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+            -d "$BODY")
           echo "authenticated status: $code"
+          [ "$code" = "200" ] || head -c 300 body.json; echo
           [ "$code" = "200" ] || { echo "::error::expected 200 with credential, got $code"; exit 1; }
           n=$(grep -o '"name"[[:space:]]*:[[:space:]]*"[a-z_]*"' body.json | sort -u | wc -l)
           echo "tool-name-like fields: $n"
