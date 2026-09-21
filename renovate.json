@@ -1,0 +1,14 @@
+{
+  "$schema": "https://docs.renovate.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["npm"],
+  "automerge": false,
+  "packageRules": [
+    {
+      "description": "Pinned agent client CLIs used by liveness legs (added in CHAOS-6205). A new version is always a reviewed PR.",
+      "matchPackageNames": ["@anthropic-ai/claude-code", "@openai/codex", "opencode-ai"],
+      "groupName": "agent client pins",
+      "automerge": false
+    }
+  ]
+}
