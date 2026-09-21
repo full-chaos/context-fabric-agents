@@ -1,0 +1,12 @@
+{
+  "mcp": {
+    "servers": {
+      "dev-health": {
+        "type": "remote",
+        "url": "https://mcp.fullchaos.dev/mcp",
+        "protocol": "auto",
+        "oauth": {}
+      }
+    }
+  }
+}
