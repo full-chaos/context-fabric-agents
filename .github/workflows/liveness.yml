@@ -1,0 +1,19 @@
+name: liveness
+
+# Placeholder. The real probes land in CHAOS-6204 / CHAOS-6205, and the
+# schedule is added there. Until then this job FAILS on purpose: a liveness
+# check that is not configured must not read as green.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  liveness:
+    name: liveness
+    runs-on: ubuntu-latest
+    steps:
+      - name: Not configured
+        run: |
+          echo "::error::liveness is not configured (CHAOS-6204, CHAOS-6205)"
+          exit 1

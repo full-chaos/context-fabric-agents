@@ -1,0 +1,20 @@
+# build and test output
+/bin/
+/dist/
+/results/
+*.test
+*.out
+coverage.*
+
+# editor and OS
+.DS_Store
+.idea/
+.vscode/*
+!vscode/
+*.swp
+
+# local environment: never commit credentials
+.env
+.env.*
+*.pem
+*.key

@@ -1,0 +1,10 @@
+title = "context-fabric-agents"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "fcacr-token"
+description = "Context Fabric ACR token literal"
+regex = '''fcacr_[A-Za-z0-9]{6,}'''
+keywords = ["fcacr_"]
