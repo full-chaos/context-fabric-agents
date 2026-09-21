@@ -12,6 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CODEX_VERSION: 0.155.1
   ACTIONLINT_VERSION: v1.7.12
   GITLEAKS_VERSION: v8.30.1
 
@@ -49,6 +50,22 @@ jobs:
           go-version-file: go.mod
       - name: go test (includes the secret and path guard)
         run: go test -count=1 ./...
+
+  codex-config:
+    name: codex-config
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Codex CLI
+        run: |
+          npm install --no-audit --no-fund --prefix "$HOME/codex-cli" "@openai/codex@${CODEX_VERSION}"
+          echo "$HOME/codex-cli/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Codex loads the configs, installs the plugin, rejects planted defects
+        run: bash codex/proof/static_check.sh
 
   gitleaks:
     name: gitleaks
