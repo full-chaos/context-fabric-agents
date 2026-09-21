@@ -25,7 +25,7 @@ const (
 	// endpoint is the production hosted MCP. Deliberately not a flag.
 	endpoint = "https://mcp.fullchaos.dev/mcp"
 	// grantedRepository is the one repository the CI credential is granted.
-	grantedRepository = "full-chaos/context-fabric-agents"
+	grantedRepository = "full-chaos/dev-health-acr"
 	// tokenEnv is the only place the credential is read from.
 	tokenEnv = "ACR_MCP_CI_BEARER"
 
