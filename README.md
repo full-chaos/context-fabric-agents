@@ -35,10 +35,14 @@ OAuth login follows under CHAOS-6184.
 | `plugins/` | Claude Code plugin |
 | `codex/`, `opencode/`, `cursor/`, `vscode/` | Per-client configs |
 | `skills/` | One shared skill text |
-| `contracts/acr-mcp/` | Snapshot of the live server contract |
+| `contracts/acr-mcp/` | Snapshot of the live server contract, `compat.json`, drift job ([details](contracts/acr-mcp/README.md)) |
 | `liveness/` | Scheduled liveness probes |
 | `cmd/`, `internal/` | Go renderer, probes, repository guards |
 | `docs/` | Install and usage docs |
+
+## Contract pin
+
+`contracts/acr-mcp/snapshot.json` pins the live server contract and a daily job opens a `contract-drift` PR when it changes. A contract widening is acknowledged by a merged snapshot PR before configs or skills use the new member. See [contracts/acr-mcp/README.md](contracts/acr-mcp/README.md).
 
 ## Contributing and security
 

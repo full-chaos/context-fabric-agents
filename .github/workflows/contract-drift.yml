@@ -13,8 +13,6 @@ on:
   schedule:
     - cron: '17 5 * * *'
   workflow_dispatch:
-  push:
-    branches: [feat/contract-snapshot] # TEMP: pre-merge proof runs, removed before merge
 
 permissions: {}
 
@@ -32,7 +30,7 @@ jobs:
       contents: write
       pull-requests: write
     env:
-      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER_UNSET_PROOF }}
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
       # PRs opened with the default token do not start CI, so the PR would be
       # unmergeable under branch protection. Prefer the CI token.
       PR_TOKEN: ${{ secrets.GH_CI_TOKEN || github.token }}
