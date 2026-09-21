@@ -3,7 +3,7 @@
   "host": "mcp.fullchaos.dev",
   "negotiations": [
     {
-      "negotiated": "2025-11-25",
+      "negotiated": "2026-07-28",
       "path": "server/discover",
       "requested": "2026-07-28"
     },
