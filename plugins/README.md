@@ -19,7 +19,7 @@ claude
 
 ### If `ACR_MCP_TOKEN` is unset
 
-The plugin sends `Authorization: Bearer ${ACR_MCP_TOKEN}`. With the variable unset the header is sent with an empty value, the server answers HTTP 401 `malformed_bearer`, and Claude Code does not fall back to OAuth when an `Authorization` header is configured. `claude mcp list` shows:
+The plugin sends `Authorization: Bearer ${ACR_MCP_TOKEN}`. With the variable unset the header carries no valid credential (the exact bytes Claude Code sends are not verified), the server answers HTTP 401 `malformed_bearer`, and Claude Code does not fall back to OAuth when an `Authorization` header is configured. `claude mcp list` shows:
 
 ```
 plugin:dev-health:dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ✘ Failed to connect — Server rejected the configured Authorization header (HTTP 401). ... {"error":"malformed_bearer",...}
