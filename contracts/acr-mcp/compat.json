@@ -1,0 +1,35 @@
+{
+  "contract": "mcp_tools.v1",
+  "clients": {
+    "claude-code": {
+      "expected_method": "server/discover",
+      "expected_revision": "2026-07-28",
+      "pinned_version": "2.1.278",
+      "status": "confirmed"
+    },
+    "codex": {
+      "expected_method": "initialize",
+      "expected_revision": "2025-06-18",
+      "pinned_version": "0.155.1",
+      "status": "confirmed"
+    },
+    "cursor": {
+      "expected_method": "",
+      "expected_revision": "",
+      "pinned_version": "",
+      "status": "unconfirmed"
+    },
+    "opencode": {
+      "expected_method": "",
+      "expected_revision": "",
+      "pinned_version": "",
+      "status": "unconfirmed"
+    },
+    "vscode": {
+      "expected_method": "",
+      "expected_revision": "",
+      "pinned_version": "",
+      "status": "unconfirmed"
+    }
+  }
+}
