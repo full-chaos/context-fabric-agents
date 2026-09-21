@@ -873,6 +873,14 @@
       },
       "input_schema_digest": "sha256:a45df8147c3186d6724cd5d36b0eac10653aa76b8f36451122bb64ea861ad6fb",
       "name": "source_evidence"
+    },
+    {
+      "description_digest": "sha256:00",
+      "input_schema": {
+        "type": "object"
+      },
+      "input_schema_digest": "sha256:00",
+      "name": "kill_proof_extra_tool"
     }
   ]
 }
