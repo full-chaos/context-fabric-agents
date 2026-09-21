@@ -31,8 +31,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  l1:
+    name: l1 protocol probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
+    steps:
+      - name: Mask credential
+        run: |
+          if [ -n "$ACR_MCP_CI_BEARER" ]; then echo "::add-mask::$ACR_MCP_CI_BEARER"; fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Run the L1 probe (writes results/l1.json on pass and on fail)
+        run: go run ./liveness/probe -snapshot contracts/acr-mcp/snapshot.json -out results/l1.json
+      - name: Upload the result record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: liveness-result-l1
+          path: results/l1.json
+          if-no-files-found: error
+          retention-days: 30
+
   aggregate:
     name: aggregate
+    needs: [l1]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
