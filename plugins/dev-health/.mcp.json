@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "dev-health": {
+      "type": "http",
+      "url": "https://mcp.fullchaos.dev/mcp",
+      "headers": {
+        "Authorization": "Bearer ${ACR_MCP_TOKEN}"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "dev-health",
+  "version": "0.1.0",
+  "description": "Ask engineering delivery questions and inspect cited evidence through the hosted Dev Health MCP server.",
+  "author": {
+    "name": "Full Chaos",
+    "url": "https://github.com/full-chaos"
+  },
+  "homepage": "https://github.com/full-chaos/context-fabric-agents",
+  "repository": "https://github.com/full-chaos/context-fabric-agents",
+  "license": "Apache-2.0",
+  "keywords": ["mcp", "dev-health", "engineering-metrics"]
+}

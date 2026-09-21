@@ -1,0 +1,122 @@
+name: claude-plugin
+
+# CHAOS-6201. validate: offline manifest validation with a pinned Claude Code.
+# live: clean HOME, marketplace add -> install -> `claude mcp list` against the
+# hosted server. The token is a repository secret and is never printed.
+on:
+  pull_request:
+    paths:
+      - ".claude-plugin/**"
+      - "plugins/dev-health/**"
+      - "skills/**"
+      - "ci/claude-code/**"
+      - ".github/workflows/claude-plugin.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".claude-plugin/**"
+      - "plugins/dev-health/**"
+      - "skills/**"
+      - "ci/claude-code/**"
+      - ".github/workflows/claude-plugin.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: claude-plugin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned Claude Code (ci/claude-code lockfile)
+        run: |
+          npm ci --prefix ci/claude-code
+          echo "$GITHUB_WORKSPACE/ci/claude-code/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Client version matches the pin
+        run: |
+          want=$(node -p "require('./ci/claude-code/package.json').devDependencies['@anthropic-ai/claude-code']")
+          got=$(claude --version)
+          echo "want $want, got $got"
+          case "$got" in "$want "*) ;; *) echo "::error::claude version is not the pin"; exit 1 ;; esac
+      - name: Validate the plugin (strict)
+        run: claude plugin validate plugins/dev-health --strict
+      - name: Validate the marketplace (strict)
+        run: claude plugin validate . --strict
+      - name: Negative control (an unknown manifest field must fail strict validation)
+        run: |
+          rm -rf "$RUNNER_TEMP/bad"
+          mkdir -p "$RUNNER_TEMP/bad"
+          cp -r plugins/dev-health "$RUNNER_TEMP/bad/dev-health"
+          sed -i 's/"license"/"licence"/' "$RUNNER_TEMP/bad/dev-health/.claude-plugin/plugin.json"
+          if claude plugin validate "$RUNNER_TEMP/bad/dev-health" --strict; then
+            echo "::error::strict validation accepted a manifest with an unknown field"
+            exit 1
+          fi
+          echo "negative control failed as expected"
+
+  live:
+    name: live
+    # Fork PRs get no secrets: the job is skipped there (not required).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
+      # Pull requests test the checked-out branch; other events test the
+      # published marketplace exactly as a user adds it.
+      MARKETPLACE_SOURCE: ${{ github.event_name == 'pull_request' && github.workspace || github.repository }}
+      DISABLE_AUTOUPDATER: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require the credential
+        run: |
+          if [ -z "$ACR_MCP_CI_BEARER" ]; then
+            echo "::error::secret ACR_MCP_CI_BEARER is missing"
+            exit 1
+          fi
+          echo "::add-mask::$ACR_MCP_CI_BEARER"
+      - name: Install the pinned Claude Code (ci/claude-code lockfile)
+        run: |
+          npm ci --prefix ci/claude-code
+          echo "$GITHUB_WORKSPACE/ci/claude-code/node_modules/.bin" >> "$GITHUB_PATH"
+          ./ci/claude-code/node_modules/.bin/claude --version
+      - name: Clean HOME, marketplace add, install
+        run: |
+          set -eu
+          export HOME="$RUNNER_TEMP/clean-home"
+          rm -rf "$HOME"; mkdir -p "$HOME"
+          unset CLAUDE_CONFIG_DIR ACR_MCP_TOKEN
+          echo "marketplace source: $MARKETPLACE_SOURCE"
+          claude plugin marketplace add "$MARKETPLACE_SOURCE"
+          claude plugin install dev-health@dev-health
+          claude plugin list
+          echo "HOME=$HOME" >> "$GITHUB_ENV"
+      - name: Unset ACR_MCP_TOKEN gives a malformed bearer, HTTP 401 (documented behaviour)
+        run: |
+          unset CLAUDE_CONFIG_DIR ACR_MCP_TOKEN
+          timeout 120 claude mcp list | tee "$RUNNER_TEMP/unset.txt"
+          line=$(grep '^plugin:dev-health:dev-health:' "$RUNNER_TEMP/unset.txt")
+          case "$line" in *"HTTP 401"*"malformed_bearer"*) echo "unset-env behaviour confirmed" ;;
+            *) echo "::error::expected a 401 malformed_bearer failure with ACR_MCP_TOKEN unset"; exit 1 ;; esac
+      - name: With ACR_MCP_TOKEN set, dev-health is Connected to prod
+        env:
+          ACR_MCP_TOKEN: ${{ secrets.ACR_MCP_CI_BEARER }}
+        run: |
+          unset CLAUDE_CONFIG_DIR
+          timeout 120 claude mcp list | sed "s/${ACR_MCP_TOKEN}/<redacted>/g" | tee "$RUNNER_TEMP/set.txt"
+          grep -q '^plugin:dev-health:dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ✔ Connected' "$RUNNER_TEMP/set.txt" \
+            || { echo "::error::dev-health is not Connected with the token set"; exit 1; }
