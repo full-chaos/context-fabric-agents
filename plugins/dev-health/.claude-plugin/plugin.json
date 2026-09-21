@@ -8,6 +8,6 @@
   },
   "homepage": "https://github.com/full-chaos/context-fabric-agents",
   "repository": "https://github.com/full-chaos/context-fabric-agents",
-  "licence": "Apache-2.0",
+  "license": "Apache-2.0",
   "keywords": ["mcp", "dev-health", "engineering-metrics"]
 }
