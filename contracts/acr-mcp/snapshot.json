@@ -844,6 +844,12 @@
       },
       "input_schema_digest": "sha256:da92f58ed993f83ac58b09184fa538d6c0e7d00ef6f692860b15907abd650517",
       "name": "investigation_result"
+    },
+    {
+      "description_digest": "sha256:0",
+      "input_schema": {},
+      "input_schema_digest": "sha256:0",
+      "name": "planted_removed_tool"
     }
   ]
 }
