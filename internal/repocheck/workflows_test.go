@@ -45,8 +45,8 @@ func TestWorkflowsFollowPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) < 3 {
-		t.Fatalf("found %d workflows, want at least 3 (measurement did not happen)", len(files))
+	if len(files) < 2 {
+		t.Fatalf("found %d workflows, want at least 2 (measurement did not happen)", len(files))
 	}
 	for _, f := range files {
 		data, err := os.ReadFile(f)

@@ -19,3 +19,7 @@ If you find a secret here, report it as above. Treat it as leaked: it will be re
 ## Scope
 
 Configs, skills and probes for the Context Fabric hosted MCP. Server-side issues: report through the same path; we route them to the server owners.
+
+## Code scanning
+
+CodeQL runs through the organization-managed default setup (an in-repo advanced workflow cannot upload while default setup is on). Dependency and Action updates come from Dependabot; agent client CLI pins come from Renovate.
