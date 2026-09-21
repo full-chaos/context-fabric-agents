@@ -51,12 +51,16 @@ jobs:
           go-version-file: go.mod
       - name: Run the L1 probe (writes results/l1.json on pass and on fail)
         run: go run ./liveness/probe -snapshot contracts/acr-mcp/snapshot.json -out results/l1.json
+      - name: KILL PROOF plant a malformed l1.json and an extra result file
+        run: |
+          printf '{"schema_version":"cfa.liveness.result.v1","leg":"l1",' > results/l1.json
+          cp results/l1.json results/extra.json
       - name: Upload the result record
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: liveness-result-l1
-          path: results/l1.json
+          path: results/
           if-no-files-found: error
           retention-days: 30
 
