@@ -1,0 +1,19 @@
+{
+  "schema_version": "cfa.liveness.legs.v1",
+  "legs": [
+    {
+      "id": "l1",
+      "mode": "live",
+      "description": "L1 protocol probe against https://mcp.fullchaos.dev/mcp (go-sdk v1.8.0 client)",
+      "job": "l1",
+      "required_steps": ["a_discover", "b_initialize", "c_contract", "d_context", "e_unauth"]
+    },
+    {
+      "id": "l1-trial",
+      "mode": "declared-off",
+      "description": "L1 protocol probe against the trial host https://mcp.commanderkeen.dev/mcp",
+      "reason": "trial hosts sit behind Cloudflare Access by design; a GitHub runner has no Access service token",
+      "issue": "https://linear.app/fullchaos/issue/CHAOS-6222"
+    }
+  ]
+}

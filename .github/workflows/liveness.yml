@@ -1,64 +1,129 @@
 name: liveness
 
-# CHAOS-6196 credential smoke. The full probe suite lands in CHAOS-6204 /
-# CHAOS-6205 and replaces this job. Until then this job proves the CI
-# credential works end to end: it fails if the secret or variable is missing,
-# if an unauthenticated call is not 401, or if the authenticated call is not
-# 200 with a non-empty tools list. Nothing here prints the bearer.
+# CHAOS-6204. Scheduled liveness for the hosted MCP.
+#
+# Legs are declared in liveness/legs.json (live | static-only | declared-off).
+# Each live leg is one job that writes results/<leg>.json and uploads it as
+# the artifact liveness-result-<leg>. The aggregate job needs every leg job,
+# runs always, and is red when a live leg has no job, a job did not succeed
+# (failure, skipped, cancelled), a result is missing, malformed or failing,
+# or an undeclared job or result file appears. A red run opens or updates
+# one issue labelled liveness-failure.
+#
+# L1 replaces the CHAOS-6196 credential smoke; its raw-call shape (the
+# 2026-07-28 _meta triple plus an Mcp-Method header) lives on in step
+# e_unauth of liveness/internal/l1. A missing credential is a RED run.
+#
+# The credential is the repository secret ACR_MCP_CI_BEARER (no `liveness`
+# environment: the secret value cannot be moved without re-minting; see
+# liveness/README.md). Host and repository are compiled constants in
+# liveness/probe; workflow_dispatch has no inputs. Nothing prints the
+# credential, response headers or bodies.
 on:
+  schedule:
+    - cron: '41 */6 * * *'
   workflow_dispatch:
 
 permissions: {}
 
+concurrency:
+  group: liveness-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  liveness:
-    name: liveness
+  l1:
+    name: l1 protocol probe
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    permissions:
+      contents: read
     env:
-      # 2026-07-28 is stateless: every call carries the _meta triple and an
-      # Mcp-Method header equal to the body method (SDK returns 400 otherwise).
-      BODY: '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"cfa-liveness","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}}'
-      ACR_MCP_URL: ${{ vars.ACR_MCP_URL }}
       ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
     steps:
-      - name: Require configuration
+      - name: Mask credential
         run: |
-          if [ -z "$ACR_MCP_URL" ]; then
-            echo "::error::repository variable ACR_MCP_URL is missing"
-            exit 1
-          fi
-          if [ -z "$ACR_MCP_CI_BEARER" ]; then
-            echo "::error::secret ACR_MCP_CI_BEARER is missing"
-            exit 1
-          fi
-          echo "::add-mask::$ACR_MCP_CI_BEARER"
+          if [ -n "$ACR_MCP_CI_BEARER" ]; then echo "::add-mask::$ACR_MCP_CI_BEARER"; fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Run the L1 probe (writes results/l1.json on pass and on fail)
+        run: go run ./liveness/probe -snapshot contracts/acr-mcp/snapshot.json -out results/l1.json
+      - name: Upload the result record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: liveness-result-l1
+          path: results/l1.json
+          if-no-files-found: error
+          retention-days: 30
 
-      - name: Negative control (no credential must be 401)
-        run: |
-          code=$(curl -sS -o neg.txt -D neg.hdr -w '%{http_code}' -X POST "$ACR_MCP_URL" \
-            -H 'Content-Type: application/json' \
-            -H 'Accept: application/json, text/event-stream' \
-            -H 'MCP-Protocol-Version: 2026-07-28' \
-            -H 'Mcp-Method: tools/list' \
-            -d "$BODY")
-          echo "unauthenticated status: $code"
-          grep -iE '^(server|cf-mitigated|www-authenticate|content-type):' neg.hdr || true
-          head -c 300 neg.txt; echo
-          [ "$code" = "401" ] || { echo "::error::expected 401 without credential, got $code"; exit 1; }
+  aggregate:
+    name: aggregate
+    needs: [l1]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    env:
+      NEEDS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Download result records
+        # A download problem must not hide the verdict: the aggregator then
+        # reports every live leg as missing.
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: liveness-result-*
+          merge-multiple: true
+          path: results
+      - name: Aggregate (fails loudly)
+        run: go run ./liveness/aggregate -legs liveness/legs.json -results results -summary "$GITHUB_STEP_SUMMARY"
 
-      - name: Authenticated tools/list must be 200 with tools
+  report:
+    name: open or update the liveness-failure issue
+    needs: [aggregate]
+    if: always() && needs.aggregate.result != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      EVENT: ${{ github.event_name }}
+      REF: ${{ github.ref_name }}
+      SHA: ${{ github.sha }}
+      AGG: ${{ needs.aggregate.result }}
+    steps:
+      - name: Open or update one issue
         run: |
-          code=$(curl -sS -o body.json -w '%{http_code}' -X POST "$ACR_MCP_URL" \
-            -H 'Content-Type: application/json' \
-            -H 'Accept: application/json, text/event-stream' \
-            -H 'MCP-Protocol-Version: 2026-07-28' \
-            -H 'Mcp-Method: tools/list' \
-            -H "Authorization: Bearer $ACR_MCP_CI_BEARER" \
-            -d "$BODY")
-          echo "authenticated status: $code"
-          [ "$code" = "200" ] || head -c 300 body.json; echo
-          [ "$code" = "200" ] || { echo "::error::expected 200 with credential, got $code"; exit 1; }
-          n=$(grep -o '"name"[[:space:]]*:[[:space:]]*"[a-z_]*"' body.json | sort -u | wc -l)
-          echo "tool-name-like fields: $n"
-          [ "$n" -ge 1 ] || { echo "::error::tools/list returned no tools"; exit 1; }
+          gh label create liveness-failure --force --color b60205 \
+            --description "scheduled liveness run failed" >/dev/null
+          line="Liveness run failed (aggregate: ${AGG}; event: ${EVENT}; ref: ${REF}; sha: ${SHA}): ${RUN_URL}"
+          existing=$(gh issue list --label liveness-failure --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$line"
+            echo "updated issue #$existing"
+          else
+            {
+              echo "The scheduled liveness workflow for the hosted MCP is red."
+              echo
+              echo "$line"
+              echo
+              echo "Each later red run adds a comment here. The run summary names the failing leg and step."
+              echo "Runbook: liveness/README.md and liveness/RUNBOOK.md. Close this issue once a run is green."
+            } > body.md
+            gh issue create --title "Liveness failure: hosted MCP" --label liveness-failure --body-file body.md
+          fi
