@@ -52,7 +52,7 @@ func TestCommittedArtifactsMatchRenderer(t *testing.T) {
 
 func TestArtifactSetIsComplete(t *testing.T) {
 	_, arts := loadRepo(t)
-	if want := len(Clients)*len(Variants) + len(Variants) + len(BundleDirs); len(arts) != want {
+	if want := len(Clients)*len(Variants) + 1 + len(Variants) + len(BundleDirs); len(arts) != want {
 		t.Fatalf("got %d artifacts, want %d", len(arts), want)
 	}
 	seen := map[string]bool{}
