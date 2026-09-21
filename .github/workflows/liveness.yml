@@ -38,7 +38,7 @@ jobs:
     permissions:
       contents: read
     env:
-      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER_KILLPROOF_ABSENT }}
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
     steps:
       - name: Mask credential
         run: |
