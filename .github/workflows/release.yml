@@ -1,0 +1,216 @@
+name: release
+
+# CHAOS-6200 signed release pipeline.
+#   push tag v*        -> verify, build, sign, attest, publish a GitHub Release
+#   workflow_dispatch  -> the same run without publishing (dry run). It has no
+#                         inputs; the version comes from the VERSION file.
+# Only the publish job holds contents: write, id-token: write and
+# attestations: write. Verification and tarball build run read-only.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify (tests, render check, version gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Resolve release version
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            tag="$REF_NAME"
+          else
+            tag="v$(tr -d '[:space:]' < VERSION)"
+          fi
+          echo "release tag: $tag"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -count=1 ./...
+
+      - name: Render check
+        run: |
+          # cmd/render lands with CHAOS-6198. Absent = nothing to check yet;
+          # present = a drifted client config fails the release.
+          if [ -d cmd/render ]; then
+            go run ./cmd/render -check
+          else
+            echo "::notice::cmd/render not present; render check skipped"
+          fi
+
+      - name: Version gate (tag == every plugin version)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Pass -allow-none only while no plugin manifest directory exists at
+          # all. Once .claude-plugin/.codex-plugin exist, a scan that finds no
+          # version declaration fails.
+          flags=""
+          if [ -z "$(find . -path ./.git -prune -o -type d \( -name .claude-plugin -o -name .codex-plugin \) -print -quit)" ]; then
+            flags="-allow-none"
+          fi
+          # shellcheck disable=SC2086
+          go run ./cmd/versiongate $flags "v${VERSION}"
+
+  build:
+    name: build tarballs and checksums
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build one tarball per client directory
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # client name -> directories that make up its bundle.
+          # Claude Code = plugin tree plus the root marketplace directory.
+          build() {
+            client="$1"; shift
+            paths=(LICENSE)
+            for p in "$@"; do
+              if [ -d "$p" ]; then paths+=("$p"); fi
+            done
+            if [ "${#paths[@]}" -eq 1 ]; then
+              echo "::error::client $client has no directory (${*})"
+              exit 1
+            fi
+            out="dist/context-fabric-agents-${client}-${VERSION}.tar.gz"
+            tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+              --pax-option='exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime' \
+              -cf - "${paths[@]}" | gzip -n -9 > "$out"
+            echo "built $out (${paths[*]})"
+          }
+          build claude-code plugins .claude-plugin
+          build codex codex
+          build opencode opencode
+          build cursor cursor
+          build vscode vscode
+          cd dist
+          sha256sum -- *.tar.gz > SHA256SUMS
+          test "$(wc -l < SHA256SUMS)" -eq "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)"
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: sign, attest and publish
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-dist
+          path: dist
+
+      # The repo Actions allow-list is github-owned only, so cosign is fetched
+      # from its release and pinned by SHA-256 instead of a third-party action.
+      - name: Install cosign v2.6.5 (SHA-256 pinned)
+        env:
+          COSIGN_VERSION: v2.6.5
+          COSIGN_SHA256: c3b4f5410e608af03a5eb0aaac84a4313d8da131248e08ff1759ac70c79d1644
+        run: |
+          set -euo pipefail
+          curl -fsSL -o cosign "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
+          echo "${COSIGN_SHA256}  cosign" | sha256sum --check
+          sudo install -m 0755 cosign /usr/local/bin/cosign
+          cosign version
+
+      - name: Cosign keyless sign (.sig + .pem per asset)
+        run: |
+          set -euo pipefail
+          cd dist
+          for f in *.tar.gz SHA256SUMS; do
+            cosign sign-blob --yes \
+              --output-signature "${f}.sig" \
+              --output-certificate "${f}.pem" \
+              "$f"
+          done
+
+      - name: Verify our own signatures before publishing
+        env:
+          IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          set -euo pipefail
+          cd dist
+          for f in *.tar.gz SHA256SUMS; do
+            cosign verify-blob \
+              --certificate "${f}.pem" --signature "${f}.sig" \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$f"
+          done
+          sha256sum --check SHA256SUMS
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          flags=(--verify-tag --generate-notes)
+          case "$TAG" in
+            *-*) flags+=(--prerelease) ;;
+          esac
+          gh release create "$TAG" --repo "$REPO" --title "$TAG" "${flags[@]}" dist/*
+
+      - name: Keep the signed set from a dry run
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-dry-run
+          path: dist/
+          if-no-files-found: error
+          retention-days: 3
