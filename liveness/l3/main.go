@@ -22,7 +22,10 @@ import (
 )
 
 // endpoint is the production hosted MCP. Deliberately not a flag.
-const endpoint = "https://mcp.fullchaos.dev/mcp"
+//
+// KILL-PROOF-TEMP (CHAOS-6208): pointed at a path with no PRM on purpose, to
+// prove the L3 leg goes red on a real dispatch. Revert before merge.
+const endpoint = "https://mcp.fullchaos.dev/kill-proof-no-prm-here"
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
