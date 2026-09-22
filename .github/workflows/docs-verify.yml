@@ -98,37 +98,27 @@ jobs:
     permissions:
       contents: read
     env:
-      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
       MARKETPLACE_SOURCE: ${{ github.event_name == 'pull_request' && github.workspace || github.repository }}
       DISABLE_AUTOUPDATER: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require the credential
-        run: |
-          if [ -z "$ACR_MCP_CI_BEARER" ]; then
-            echo "::error::secret ACR_MCP_CI_BEARER is missing"
-            exit 1
-          fi
-          echo "::add-mask::$ACR_MCP_CI_BEARER"
       - name: Install the pinned Claude Code (ci/claude-code lockfile)
         run: |
           npm ci --prefix ci/claude-code
           echo "$GITHUB_WORKSPACE/ci/claude-code/node_modules/.bin" >> "$GITHUB_PATH"
-      - name: Clean HOME, marketplace add, install, verify Connected
-        env:
-          ACR_MCP_TOKEN: ${{ secrets.ACR_MCP_CI_BEARER }}
+      - name: "Clean HOME, marketplace add, install, verify the OAuth-default entry needs authentication (CHAOS-6208, no browser in CI)"
         run: |
           set -eu
           export HOME="$RUNNER_TEMP/clean-home-plugin"
           rm -rf "$HOME"; mkdir -p "$HOME"
-          unset CLAUDE_CONFIG_DIR
+          unset CLAUDE_CONFIG_DIR ACR_MCP_TOKEN
           claude plugin marketplace add "$MARKETPLACE_SOURCE"
           claude plugin install dev-health@dev-health
-          timeout 120 claude mcp list | sed "s/${ACR_MCP_TOKEN}/<redacted>/g" | tee "$RUNNER_TEMP/list-before.txt"
-          grep -q '^plugin:dev-health:dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ✔ Connected' "$RUNNER_TEMP/list-before.txt" \
-            || { echo "::error::dev-health plugin is not Connected before uninstall"; exit 1; }
+          timeout 120 claude mcp list | tee "$RUNNER_TEMP/list-before.txt"
+          grep -q '^plugin:dev-health:dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ! Needs authentication' "$RUNNER_TEMP/list-before.txt" \
+            || { echo "::error::dev-health plugin is not in the expected pre-login OAuth state before uninstall"; exit 1; }
           echo "HOME=$HOME" >> "$GITHUB_ENV"
       - name: Uninstall (docs "Uninstall" section) — claude plugin uninstall
         run: |
