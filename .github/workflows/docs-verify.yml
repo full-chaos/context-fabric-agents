@@ -1,0 +1,184 @@
+name: docs-verify
+
+# CHAOS-6206. Copy-runs the exact "Verify" and "Uninstall" commands this
+# repo's docs show, against the production hosted server, so the docs are
+# proof-read by CI rather than by hand. Install and the initial connect are
+# already proven live by claude-plugin.yml (Claude Code) and codex-live.yml
+# (Codex); this workflow proves the manual (non-plugin) add path and the
+# uninstall path each doc names. The token is a repository secret and is
+# never printed. Fork PRs get no secret: those jobs are skipped there.
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - "docs/**"
+      - "plugins/README.md"
+      - "codex/README.md"
+      - ".github/workflows/docs-verify.yml"
+  push:
+    branches: [main]
+    paths:
+      - "README.md"
+      - "docs/**"
+      - "plugins/README.md"
+      - "codex/README.md"
+      - ".github/workflows/docs-verify.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: docs-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CLAUDE_CODE_VERSION: 2.1.278
+  CODEX_VERSION: 0.155.1
+
+jobs:
+  claude-manual-add-and-remove:
+    name: claude-manual-add-and-remove
+    # Fork PRs get no secrets: the job is skipped there (not required).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require the credential
+        run: |
+          if [ -z "$ACR_MCP_CI_BEARER" ]; then
+            echo "::error::secret ACR_MCP_CI_BEARER is missing"
+            exit 1
+          fi
+          echo "::add-mask::$ACR_MCP_CI_BEARER"
+      - name: Install the pinned Claude Code (ci/claude-code lockfile)
+        run: |
+          npm ci --prefix ci/claude-code
+          echo "$GITHUB_WORKSPACE/ci/claude-code/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Clean HOME, add the manual config exactly as plugins/README.md shows it
+        env:
+          ACR_MCP_TOKEN: ${{ secrets.ACR_MCP_CI_BEARER }}
+        run: |
+          set -eu
+          export HOME="$RUNNER_TEMP/clean-home-manual"
+          rm -rf "$HOME"; mkdir -p "$HOME"
+          unset CLAUDE_CONFIG_DIR
+          # shellcheck disable=SC2016 # single-quoted on purpose: Claude Code expands ${ACR_MCP_TOKEN} itself, the shell must not.
+          claude mcp add --transport http dev-health https://mcp.fullchaos.dev/mcp --header 'Authorization: Bearer ${ACR_MCP_TOKEN}'
+          echo "HOME=$HOME" >> "$GITHUB_ENV"
+      - name: Verify (docs "Verify" section) — Connected to prod
+        env:
+          ACR_MCP_TOKEN: ${{ secrets.ACR_MCP_CI_BEARER }}
+        run: |
+          timeout 120 claude mcp list | sed "s/${ACR_MCP_TOKEN}/<redacted>/g" | tee "$RUNNER_TEMP/list-before.txt"
+          grep -q '^dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ✔ Connected' "$RUNNER_TEMP/list-before.txt" \
+            || { echo "::error::dev-health is not Connected after the manual add"; exit 1; }
+      - name: Uninstall (docs "Uninstall" section) — claude mcp remove
+        run: |
+          claude mcp remove dev-health
+      - name: dev-health is gone after uninstall
+        run: |
+          claude mcp list | tee "$RUNNER_TEMP/list-after.txt"
+          if grep -q '^dev-health:' "$RUNNER_TEMP/list-after.txt"; then
+            echo "::error::dev-health is still listed after claude mcp remove"
+            exit 1
+          fi
+
+  claude-plugin-uninstall:
+    name: claude-plugin-uninstall
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
+      MARKETPLACE_SOURCE: ${{ github.event_name == 'pull_request' && github.workspace || github.repository }}
+      DISABLE_AUTOUPDATER: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require the credential
+        run: |
+          if [ -z "$ACR_MCP_CI_BEARER" ]; then
+            echo "::error::secret ACR_MCP_CI_BEARER is missing"
+            exit 1
+          fi
+          echo "::add-mask::$ACR_MCP_CI_BEARER"
+      - name: Install the pinned Claude Code (ci/claude-code lockfile)
+        run: |
+          npm ci --prefix ci/claude-code
+          echo "$GITHUB_WORKSPACE/ci/claude-code/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Clean HOME, marketplace add, install, verify Connected
+        env:
+          ACR_MCP_TOKEN: ${{ secrets.ACR_MCP_CI_BEARER }}
+        run: |
+          set -eu
+          export HOME="$RUNNER_TEMP/clean-home-plugin"
+          rm -rf "$HOME"; mkdir -p "$HOME"
+          unset CLAUDE_CONFIG_DIR
+          claude plugin marketplace add "$MARKETPLACE_SOURCE"
+          claude plugin install dev-health@dev-health
+          timeout 120 claude mcp list | sed "s/${ACR_MCP_TOKEN}/<redacted>/g" | tee "$RUNNER_TEMP/list-before.txt"
+          grep -q '^plugin:dev-health:dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ✔ Connected' "$RUNNER_TEMP/list-before.txt" \
+            || { echo "::error::dev-health plugin is not Connected before uninstall"; exit 1; }
+          echo "HOME=$HOME" >> "$GITHUB_ENV"
+      - name: Uninstall (docs "Uninstall" section) — claude plugin uninstall
+        run: |
+          claude plugin uninstall dev-health@dev-health
+      - name: dev-health is gone after uninstall
+        run: |
+          claude plugin list | tee "$RUNNER_TEMP/plugin-list-after.txt"
+          if grep -q 'dev-health@dev-health' "$RUNNER_TEMP/plugin-list-after.txt"; then
+            echo "::error::dev-health@dev-health is still listed after claude plugin uninstall"
+            exit 1
+          fi
+          claude mcp list | tee "$RUNNER_TEMP/mcp-list-after.txt"
+          if grep -q 'dev-health' "$RUNNER_TEMP/mcp-list-after.txt"; then
+            echo "::error::dev-health is still an MCP entry after the plugin was uninstalled"
+            exit 1
+          fi
+
+  codex-marketplace-remove:
+    name: codex-marketplace-remove
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Codex CLI
+        run: |
+          npm install --no-audit --no-fund --prefix "$HOME/codex-cli" "@openai/codex@${CODEX_VERSION}"
+          echo "$HOME/codex-cli/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Clean CODEX_HOME, add the plugin marketplace
+        run: |
+          mkdir -p "$HOME/codex-home"
+          echo "CODEX_HOME=$HOME/codex-home" >> "$GITHUB_ENV"
+      - name: Marketplace add (published source, exactly as codex/README.md shows it), then verify dev-health is registered
+        run: |
+          codex plugin marketplace add full-chaos/context-fabric-agents
+          codex plugin add dev-health@dev-health
+          codex mcp list | tee "$RUNNER_TEMP/codex-list-before.txt"
+          grep -q 'dev-health' "$RUNNER_TEMP/codex-list-before.txt" \
+            || { echo "::error::dev-health is not registered after codex plugin add"; exit 1; }
+      - name: Uninstall (docs "Uninstall" section) — codex plugin marketplace remove
+        run: |
+          codex plugin marketplace remove dev-health
+      - name: dev-health is gone after the marketplace is removed
+        run: |
+          codex mcp list | tee "$RUNNER_TEMP/codex-list-after.txt"
+          if grep -q 'dev-health' "$RUNNER_TEMP/codex-list-after.txt"; then
+            echo "::error::dev-health is still registered after codex plugin marketplace remove"
+            exit 1
+          fi

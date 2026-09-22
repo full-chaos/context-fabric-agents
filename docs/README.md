@@ -1,5 +1,19 @@
 # docs
 
-Install and usage docs per client (CHAOS-6206).
+Install and usage docs for the hosted Dev Health MCP server (CHAOS-6206).
+Per-client install, credential, verify, uninstall, and troubleshooting
+steps live in each client's own README (`plugins/`, `codex/`, `opencode/`,
+`cursor/`, `vscode/`); this directory holds the parts that are the same
+for every client.
 
-Not yet populated. Tracked under CHAOS-6183.
+| Doc | Holds |
+|---|---|
+| [get-a-credential.md](get-a-credential.md) | Where the bearer token comes from today, and what changes after OAuth ships |
+| [usage.md](usage.md) | `context_for_task` scope, the investigate → clarify → result → evidence flow, guide resources and prompts |
+| [self-hosted.md](self-hosted.md) | The one URL field to edit to point a client at your own deployment |
+| [migration.md](migration.md) | Moving from the ACR project's embedded `docs/examples/mcp-clients/*-remote-*` examples |
+| [verify-release.md](verify-release.md) | `cosign verify-blob` / `gh attestation verify` for a downloaded release asset (CHAOS-6200) |
+
+`verify-release.md` ships with the signed release pipeline (CHAOS-6200,
+PR #3). If that PR has not merged yet, the link above is a preview of the
+path it will land at; do not duplicate its content here.

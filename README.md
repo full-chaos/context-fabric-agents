@@ -1,32 +1,77 @@
 # context-fabric-agents
 
-Agent client plugins, skills and configs for the Context Fabric hosted MCP server.
+[![liveness](https://github.com/full-chaos/context-fabric-agents/actions/workflows/liveness.yml/badge.svg)](https://github.com/full-chaos/context-fabric-agents/actions/workflows/liveness.yml)
+[![ci](https://github.com/full-chaos/context-fabric-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/full-chaos/context-fabric-agents/actions/workflows/ci.yml)
 
-**Status: not yet released.** Current version: `0.1.0-dev`. Nothing here is installable yet.
+Agent client plugins, skills, and configs for the **Dev Health hosted MCP
+server**. Point your agent client at one URL and it can ask engineering
+delivery questions and inspect cited evidence — no local server to run.
 
 ## Hosted endpoints
 
 | Environment | MCP endpoint |
 |---|---|
 | Production | `https://mcp.fullchaos.dev/mcp` |
-| Trial | `https://mcp.commanderkeen.dev/mcp` |
+| Trial | `https://mcp.commanderkeen.dev/mcp` (Cloudflare Access-gated; not reachable from a plain client) |
 
 ## Supported clients
 
-Protocol facts below were observed live on 2026-09-21.
+Auth today is a bearer token for every client (`ACR_MCP_TOKEN`); OAuth
+login (no token to copy) follows once CHAOS-6184 is live on prod (see
+[docs/get-a-credential.md](docs/get-a-credential.md)). Revisions and pins
+are recorded in [`contracts/acr-mcp/compat.json`](contracts/acr-mcp/compat.json);
+live/static status is recorded in [`liveness/legs.json`](liveness/legs.json)
+and the workflow named below.
 
-| Client | Version observed | Negotiated MCP revision | Config in this repo |
-|---|---|---|---|
-| Claude Code | 2.1.278 | 2026-07-28 (`server/discover`) | `plugins/` (planned) |
-| Codex | 0.155.1 | 2025-06-18 (legacy `initialize`) | `codex/` (planned) |
-| OpenCode | v1 and v2 | not yet recorded (v1 config checked live against the vendor schema in CI) | `opencode/` |
-| Cursor | - | not yet recorded | `cursor/` |
-| VS Code | - | not yet recorded | `vscode/` |
+| Client | Artifact | Auth today | Negotiated revision | Checked how |
+|---|---|---|---|---|
+| [Claude Code](plugins/README.md) | Plugin + marketplace (`plugins/`) | bearer | `2026-07-28` (`server/discover`) | live-checked, every PR ([`claude-plugin.yml`](.github/workflows/claude-plugin.yml)) |
+| [Codex](codex/README.md) | Plugin/skill bundle + `config.toml` (`codex/`) | bearer | `2025-06-18` (legacy `initialize`) | live-checked, on `codex/**` changes ([`codex-live.yml`](.github/workflows/codex-live.yml)) |
+| [OpenCode v1](opencode/README.md) | Config (`opencode/`) | bearer | not yet recorded | static-only; schema-checked live every run against the vendor's own schema ([`ci.yml` job `opencode-schema`](.github/workflows/ci.yml)) |
+| [OpenCode v2](opencode/README.md) | Config (`opencode/`) | bearer | not yet recorded | static-only; no published schema to check against |
+| [Cursor](cursor/README.md) | Config (`cursor/`) | bearer | not yet recorded | static-only; no headless client to run in CI |
+| [VS Code](vscode/README.md) | Config (`vscode/`) | bearer | not yet recorded | static-only; no headless client to run in CI |
 
-## Authentication
+"static-only" is a declared, tested state (`liveness/legs.json`), not a
+skipped check — see [`liveness/README.md`](liveness/README.md).
 
-v0.1.0: bearer token from the environment variable `ACR_MCP_TOKEN`. Never put a token in a config file.
-OAuth login follows under CHAOS-6184.
+## Install
+
+Each client's own README has the full install, get-a-credential, verify,
+uninstall, and troubleshooting steps. Quickest path, Claude Code:
+
+```bash
+export ACR_MCP_TOKEN=<your token>      # see docs/get-a-credential.md
+claude
+/plugin marketplace add full-chaos/context-fabric-agents
+/plugin install dev-health@dev-health
+```
+
+See [plugins/README.md](plugins/README.md) for the rest, including what
+`claude mcp list` shows and how to uninstall.
+
+## Usage
+
+Once connected: what `context_for_task` needs, the investigate → clarify
+→ result → evidence flow, and the guide resources and prompts every
+client can read. See [docs/usage.md](docs/usage.md).
+
+## Self-hosted
+
+Every config names one URL field. Point it at your own deployment
+instead of `mcp.fullchaos.dev` — see [docs/self-hosted.md](docs/self-hosted.md).
+
+## Migrating from acr
+
+If you set up a remote client from the ACR project's own embedded
+examples (`docs/examples/mcp-clients/*-remote-*`), see
+[docs/migration.md](docs/migration.md) — two fields change, your token
+does not.
+
+## Verify a release
+
+Signed tarballs, checksums, cosign signatures, and provenance attestation
+per release (CHAOS-6200). See [docs/verify-release.md](docs/verify-release.md).
 
 ## Layout
 
@@ -38,7 +83,7 @@ OAuth login follows under CHAOS-6184.
 | `contracts/acr-mcp/` | Snapshot of the live server contract, `compat.json`, drift job ([details](contracts/acr-mcp/README.md)) |
 | `liveness/` | Scheduled liveness probes |
 | `cmd/`, `internal/` | Go renderer, probes, repository guards |
-| `docs/` | Install and usage docs |
+| `docs/` | Install and usage docs shared across clients ([index](docs/README.md)) |
 
 ## Contract pin
 
