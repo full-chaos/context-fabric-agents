@@ -20,7 +20,14 @@ Choose the bump from the change to the hosted MCP surface that client configs an
 Pre-releases use a suffix (`v0.0.0-rc.1`) and publish as GitHub pre-releases.
 Verify a release with [docs/verify-release.md](docs/verify-release.md).
 
-## [Unreleased] - 0.1.0-dev
+The `VERSION` file names the version this repo will ship next. Every plugin manifest
+(Claude Code `plugin.json`, Codex `plugin.json`) must equal it — the release workflow's
+version gate checks the release tag against these manifests directly; the `workflow_dispatch`
+dry run checks `VERSION` instead, so keep `VERSION` in step with the manifests or the dry
+run goes red for no code reason.
+
+## [Unreleased] - 0.1.0
 
 - Bootstrap: repository skeleton, license, security policy, baseline CI.
 - Signed release pipeline: per-client tarballs, `SHA256SUMS`, cosign keyless signatures, build provenance, version gate.
+- Renderer, contract snapshot, Claude Code / Codex / OpenCode / Cursor / VS Code client bundles, liveness L1 probe.
