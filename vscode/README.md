@@ -44,6 +44,69 @@ VS Code loads project skills from `.github/skills/<name>/SKILL.md` (also
 `~/.agents/skills/`). Copy this bundle's `skills/dev-health/` directory to
 `.github/skills/dev-health/` in your project (or the personal equivalent).
 
+## Get a credential
+
+See [../docs/get-a-credential.md](../docs/get-a-credential.md). Today: a
+bearer token. VS Code prompts for it the first time it connects (the
+`acr-mcp-token` input) — you don't export an environment variable
+yourself for this client.
+
+## Verify
+
+<!-- docparity:vscode/configs/mcp.bearer.json -->
+```json
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "acr-mcp-token",
+      "description": "Dev Health MCP token (the value of ACR_MCP_TOKEN)",
+      "password": true
+    }
+  ],
+  "servers": {
+    "dev-health": {
+      "type": "http",
+      "url": "https://mcp.fullchaos.dev/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:acr-mcp-token}"
+      }
+    }
+  }
+}
+```
+
+Run **MCP: List Servers** from the Command Palette, or check the
+Extensions view's "MCP SERVERS - INSTALLED" section. This repo's CI does
+not run a live VS Code client (no headless runner exists) — verify with
+your own installed VS Code.
+
+## Uninstall
+
+Right-click the server in the Extensions view and choose uninstall, or
+delete the `dev-health` entry (and its `inputs` entry, for the bearer
+variant) from `.vscode/mcp.json` (workspace) or your user configuration
+(**MCP: Open User Configuration**) — both are vendor-documented removal
+paths. Also delete `.github/skills/dev-health/` (or the personal
+equivalent) if you copied the skill.
+
+## Troubleshooting
+
+The server decides every request on its own bearer, before any MCP
+method runs, and fails closed:
+
+| HTTP | `error` | Meaning | Fix |
+|---|---|---|---|
+| 401 | `missing_bearer` | No `Authorization` header reached the server | Re-enter the token when VS Code prompts |
+| 401 | `malformed_bearer` | The stored value is not a well-formed token | Clear the stored input and re-enter a real token |
+| 401 | `invalid_credential` | The token does not decode, or is expired or revoked | Get a new token ([../docs/get-a-credential.md](../docs/get-a-credential.md)) |
+| 403 | `insufficient_scope` | The token is valid but not granted for this call | Ask the operator who minted it to widen the grant |
+| 429 | `rate_limited` | Per-organization budget exceeded | Wait for the `Retry-After` seconds, then retry |
+
+A `502 upstream_incompatible` or `503 upstream_unavailable` means the
+request was never decided — retry later. See `docs/mcp-sidecar.md`
+§Remote in the ACR project for the full list.
+
 ## Install link
 
 The cited docs describe installing via the Extensions view (`@mcp` filter),

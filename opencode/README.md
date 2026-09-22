@@ -44,6 +44,69 @@ loads project skills from `.opencode/skills/<name>/SKILL.md` (also
 `skills/dev-health/` directory to `.opencode/skills/dev-health/` in your
 project (or the global equivalent).
 
+## Get a credential
+
+See [../docs/get-a-credential.md](../docs/get-a-credential.md). Today: a
+bearer token in `ACR_MCP_TOKEN`, set before you start OpenCode.
+
+## Verify
+
+```
+opencode mcp list
+```
+
+Per [opencode.ai/docs/mcp-servers](https://opencode.ai/docs/mcp-servers)
+it prints each server's connection state (for example `✓ dev-health
+connected`). The in-app `/mcps` view lists, connects, and disconnects
+servers too. This repo's CI does not run a live OpenCode client (no
+binary in CI; see [Validation](#validation) below) — verify with your own
+installed OpenCode.
+
+<!-- docparity:opencode/configs/opencode.bearer.json -->
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "dev-health": {
+      "type": "remote",
+      "url": "https://mcp.fullchaos.dev/mcp",
+      "enabled": true,
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {env:ACR_MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+## Uninstall
+
+Remove the `dev-health` entry from `mcp` (v1) or `mcp.servers` (v2) in
+your config file, and delete `.opencode/skills/dev-health/` (or the
+global equivalent). For v2, the vendor docs state deleting the server
+entry as the removal step; for v1, no dedicated remove command is
+documented — setting `"enabled": false` disables it without deleting the
+entry, or delete the entry yourself. `opencode mcp list` should no longer
+show `dev-health` afterward.
+
+## Troubleshooting
+
+The server decides every request on its own bearer, before any MCP
+method runs, and fails closed:
+
+| HTTP | `error` | Meaning | Fix |
+|---|---|---|---|
+| 401 | `missing_bearer` | No `Authorization` header reached the server | Set `ACR_MCP_TOKEN` before starting OpenCode |
+| 401 | `malformed_bearer` | The header is present but not a well-formed token | Re-export a real token |
+| 401 | `invalid_credential` | The token does not decode, or is expired or revoked | Get a new token ([../docs/get-a-credential.md](../docs/get-a-credential.md)) |
+| 403 | `insufficient_scope` | The token is valid but not granted for this call | Ask the operator who minted it to widen the grant |
+| 429 | `rate_limited` | Per-organization budget exceeded | Wait for the `Retry-After` seconds, then retry |
+
+A `502 upstream_incompatible` or `503 upstream_unavailable` means the
+request was never decided — retry later. See `docs/mcp-sidecar.md`
+§Remote in the ACR project for the full list.
+
 ## Install link
 
 No confirmed one-click "Add to OpenCode" link format exists on the cited
