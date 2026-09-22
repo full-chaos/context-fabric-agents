@@ -39,6 +39,57 @@ Cursor loads project skills from `.cursor/skills/<name>/SKILL.md` (also
 directory to `.cursor/skills/dev-health/` in your project (or the global
 equivalent).
 
+## Get a credential
+
+See [../docs/get-a-credential.md](../docs/get-a-credential.md). Today: a
+bearer token in `ACR_MCP_TOKEN`, set before you start Cursor.
+
+## Verify
+
+<!-- docparity:cursor/configs/mcp.bearer.json -->
+```json
+{
+  "mcpServers": {
+    "dev-health": {
+      "url": "https://mcp.fullchaos.dev/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:ACR_MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Cursor has no CLI. Check the connection state in **Customize** → MCP, or
+in the Output panel's "MCP Logs". This repo's CI does not run a live
+Cursor client (no headless runner exists) — verify with your own
+installed Cursor.
+
+## Uninstall
+
+Toggle the server off in **Customize**, or delete the `dev-health` entry
+from `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global) by
+hand — both are vendor-documented removal paths. Also delete
+`.cursor/skills/dev-health/` (or the global equivalent) if you copied the
+skill.
+
+## Troubleshooting
+
+The server decides every request on its own bearer, before any MCP
+method runs, and fails closed:
+
+| HTTP | `error` | Meaning | Fix |
+|---|---|---|---|
+| 401 | `missing_bearer` | No `Authorization` header reached the server | Set `ACR_MCP_TOKEN` before starting Cursor |
+| 401 | `malformed_bearer` | The header is present but not a well-formed token | Re-export a real token |
+| 401 | `invalid_credential` | The token does not decode, or is expired or revoked | Get a new token ([../docs/get-a-credential.md](../docs/get-a-credential.md)) |
+| 403 | `insufficient_scope` | The token is valid but not granted for this call | Ask the operator who minted it to widen the grant |
+| 429 | `rate_limited` | Per-organization budget exceeded | Wait for the `Retry-After` seconds, then retry |
+
+A `502 upstream_incompatible` or `503 upstream_unavailable` means the
+request was never decided — retry later. See `docs/mcp-sidecar.md`
+§Remote in the ACR project for the full list.
+
 ## Install link
 
 The cited doc describes an "Add to Cursor" button on Cursor's own MCP
