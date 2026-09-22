@@ -95,6 +95,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # workflow_run otherwise checks out the default branch's CURRENT
+          # tip, not the commit release.yml actually ran for -- if the pin
+          # file is bumped again on main before this run starts, the wrong
+          # (newer) pin would be read for an OLDER tag's mirror (codex round
+          # cf-6211-r3, executed repro). Pin explicitly to the triggering
+          # run's own commit; workflow_dispatch has no workflow_run context,
+          # so it falls through to the ref that dispatched this workflow.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           sparse-checkout: |
             contracts/acr-mcp/release.txt
           sparse-checkout-cone-mode: false
@@ -214,12 +222,17 @@ jobs:
           )
 
           # Completeness: the whole point of this workflow is the acr-mcp
-          # (and acr-api) binaries; a checksum-clean but incomplete source
-          # set must never publish as if it were the full release.
-          for pattern in 'acr-mcp_*' 'acr-api_*'; do
+          # (and acr-api) BINARY archives; a checksum-clean source set
+          # containing only SBOMs/manifests for a product (no actual
+          # .tar.gz/.zip archive) must never publish as if it were complete.
+          # An unsuffixed 'acr-mcp_*' glob matched acr-mcp_<version>.spdx.json
+          # too -- codex round cf-6211-r3, executed repro -- so this checks
+          # the archive extensions explicitly, not just the product prefix.
+          for prefix in acr-mcp acr-api; do
             # shellcheck disable=SC2144
-            if ! compgen -G "acr-dist/${pattern}" >/dev/null; then
-              echo "::error::no asset matching ${pattern} in the downloaded acr release -- refusing to publish"
+            if ! compgen -G "acr-dist/${prefix}_*.tar.gz" >/dev/null \
+              && ! compgen -G "acr-dist/${prefix}_*.zip" >/dev/null; then
+              echo "::error::no ${prefix} binary archive (.tar.gz/.zip) in the downloaded acr release -- refusing to publish"
               exit 1
             fi
           done
