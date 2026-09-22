@@ -165,7 +165,7 @@ func TestPluginManifestCheckDetectsPlantedDefects(t *testing.T) {
 	}
 	cases := map[string]string{
 		"misspelled license": strings.Replace(good, `"license"`, `"licence"`, 1),
-		"bad version":        strings.Replace(good, `"0.2.0"`, `"v0.1"`, 1),
+		"bad version":        strings.Replace(good, `"0.3.0"`, `"v0.1"`, 1),
 		"hooks key":          strings.Replace(good, `"name": "dev-health",`, `"name": "dev-health", "hooks": {},`, 1),
 		"mcpServers inline":  strings.Replace(good, `"name": "dev-health",`, `"name": "dev-health", "mcpServers": {},`, 1),
 		"wrong name":         strings.Replace(good, `"name": "dev-health",`, `"name": "x",`, 1),

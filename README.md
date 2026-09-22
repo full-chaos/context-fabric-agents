@@ -7,7 +7,7 @@ Agent client plugins, skills, and configs for the **Dev Health hosted MCP
 server**. Point your agent client at one URL and it can ask engineering
 delivery questions and inspect cited evidence — no local server to run.
 
-**Status: not yet released.** Current version: `0.2.0`. Nothing here is installable yet.
+**Status: not yet released.** Current version: `0.3.0`. Nothing here is installable yet.
 
 ## Hosted endpoints
 
@@ -61,6 +61,13 @@ bearer use, what `claude mcp list` shows, and how to uninstall.
 Once connected: what `context_for_task` needs, the investigate → clarify
 → result → evidence flow, and the guide resources and prompts every
 client can read. See [docs/usage.md](docs/usage.md).
+
+## Headless or remote host
+
+Codex and Claude Code both need a browser on the same machine to sign in.
+If you're running on a headless host or over SSH, use
+[`login`](docs/login.md) instead: it walks an RFC 8628 device grant, so you
+approve from a browser on any other machine.
 
 ## Self-hosted
 

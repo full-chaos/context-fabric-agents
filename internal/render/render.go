@@ -179,11 +179,25 @@ func Render(c Client, v Variant) (string, error) {
 // variant the header value is single-quoted so the shell passes ${ACR_MCP_TOKEN}
 // through unexpanded and the token is never written to the client's config.
 func RenderClaudeCodeAddCommand(v Variant) string {
+	return renderClaudeCodeAddCommand(v, RemoteURL)
+}
+
+// RenderClaudeCodeAddCommandWithURL is RenderClaudeCodeAddCommand for a
+// caller-supplied hosted MCP URL (e.g. cmd/login's device-grant helper
+// honoring --mcp-url for a self-hosted or trial deployment). The checked-in
+// goldens are always generated from RenderClaudeCodeAddCommand (RemoteURL);
+// this exists so a non-default URL gets the identical shape instead of a
+// hand-duplicated template.
+func RenderClaudeCodeAddCommandWithURL(v Variant, url string) string {
+	return renderClaudeCodeAddCommand(v, url)
+}
+
+func renderClaudeCodeAddCommand(v Variant, url string) string {
 	if v == OAuth {
-		return fmt.Sprintf("claude mcp add --transport http %s %s\n", ServerName, RemoteURL)
+		return fmt.Sprintf("claude mcp add --transport http %s %s\n", ServerName, url)
 	}
 	return fmt.Sprintf("claude mcp add --transport http %s %s --header 'Authorization: Bearer ${%s}'\n",
-		ServerName, RemoteURL, TokenEnvVar)
+		ServerName, url, TokenEnvVar)
 }
 
 // Artifacts returns every generated file, in a fixed order. skill is the
@@ -391,17 +405,31 @@ const codexOAuthComment = `# Dev Health hosted MCP server entry for Codex CLI (O
 `
 
 func renderCodex(v Variant) string {
+	return renderCodexWithURL(v, RemoteURL)
+}
+
+func renderCodexWithURL(v Variant, url string) string {
 	if v == OAuth {
 		return fmt.Sprintf(`%s
 [mcp_servers.%s]
 url = %q
 enabled = true
-`, codexOAuthComment, ServerName, RemoteURL)
+`, codexOAuthComment, ServerName, url)
 	}
 	return fmt.Sprintf(`%s
 [mcp_servers.%s]
 url = %q
 bearer_token_env_var = %q
 enabled = true
-`, codexBearerComment, ServerName, RemoteURL, TokenEnvVar)
+`, codexBearerComment, ServerName, url, TokenEnvVar)
+}
+
+// RenderCodexWithURL is Render(Codex, v) for a caller-supplied hosted MCP
+// URL. See RenderClaudeCodeAddCommandWithURL for why this exists alongside
+// the canonical (RemoteURL-only) Render.
+func RenderCodexWithURL(v Variant, url string) (string, error) {
+	if v != Bearer && v != OAuth {
+		return "", fmt.Errorf("unknown variant %q", v)
+	}
+	return renderCodexWithURL(v, url), nil
 }

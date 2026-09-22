@@ -90,6 +90,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
 
       - name: Build one tarball per client directory
         env:
@@ -120,9 +123,31 @@ jobs:
           build opencode opencode
           build cursor cursor
           build vscode vscode
+
+      - name: Build cmd/login binaries (CHAOS-6235; the one compiled release asset)
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          # .bin, not a bare filename: a cosign .sig/.pem is a plain suffix
+          # on the asset name, so a later glob keyed on this filename's own
+          # prefix would also match its own signature files once they exist.
+          # *.tar.gz avoids that by suffix already; .bin gives the binaries
+          # the same suffix-glob safety without a separate manifest file.
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            goos="${target%/*}"; goarch="${target#*/}"
+            out="dist/context-fabric-agents-login-${VERSION}-${goos}-${goarch}.bin"
+            GOOS="$goos" GOARCH="$goarch" go build -trimpath -o "$out" ./cmd/login
+            echo "built $out"
+          done
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
           cd dist
-          sha256sum -- *.tar.gz > SHA256SUMS
-          test "$(wc -l < SHA256SUMS)" -eq "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)"
+          sha256sum -- *.tar.gz *.bin > SHA256SUMS
+          test "$(wc -l < SHA256SUMS)" -eq "$(find . -maxdepth 1 \( -name '*.tar.gz' -o -name '*.bin' \) | wc -l)"
           cat SHA256SUMS
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -147,6 +172,14 @@ jobs:
           name: release-dist
           path: dist
 
+      # actions/upload-artifact zips the artifact and does not guarantee the
+      # executable bit survives the round trip through actions/download-artifact
+      # (GitHub's own docs: "permissions... are not preserved", files land at
+      # 644). Restore it explicitly -- content (and so SHA256SUMS/signatures)
+      # is unaffected by a chmod, only the mode bit changes.
+      - name: Restore the login binaries' executable bit
+        run: chmod +x dist/*.bin
+
       # The repo Actions allow-list is github-owned only, so cosign is fetched
       # from its release and pinned by SHA-256 instead of a third-party action.
       - name: Install cosign v2.6.5 (SHA-256 pinned)
@@ -164,7 +197,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          for f in *.tar.gz SHA256SUMS; do
+          for f in *.tar.gz *.bin SHA256SUMS; do
             cosign sign-blob --yes \
               --output-signature "${f}.sig" \
               --output-certificate "${f}.pem" \
@@ -177,7 +210,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          for f in *.tar.gz SHA256SUMS; do
+          for f in *.tar.gz *.bin SHA256SUMS; do
             cosign verify-blob \
               --certificate "${f}.pem" --signature "${f}.sig" \
               --certificate-identity "$IDENTITY" \
@@ -190,6 +223,7 @@ jobs:
         with:
           subject-path: |
             dist/*.tar.gz
+            dist/*.bin
             dist/SHA256SUMS
 
       - name: Publish GitHub Release
