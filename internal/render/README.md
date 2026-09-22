@@ -13,7 +13,7 @@ Constants: URL `https://mcp.fullchaos.dev/mcp`, server key `dev-health`, token e
 
 | Client | bearer | oauth |
 |---|---|---|
-| claude-code | `plugins/configs/claude-code.bearer.mcp.json`, `plugins/dev-health/.mcp.json` (same content), `.add.txt` | `plugins/configs/claude-code.oauth.mcp.json`, `.add.txt` |
+| claude-code | `plugins/configs/claude-code.bearer.mcp.json`, `.add.txt` | `plugins/configs/claude-code.oauth.mcp.json`, `plugins/dev-health/.mcp.json` (same content, CHAOS-6208 default), `.add.txt` |
 | codex | `codex/configs/config.bearer.toml` | `codex/configs/config.oauth.toml` |
 | opencode v1 | `opencode/configs/opencode.bearer.json` | `opencode/configs/opencode.oauth.json` |
 | opencode v2 | `opencode/configs/opencode-v2.bearer.json` | `opencode/configs/opencode-v2.oauth.json` |

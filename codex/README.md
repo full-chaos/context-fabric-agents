@@ -28,11 +28,11 @@ Bearer variant (headless, CI): use `configs/config.bearer.toml` and export `ACR_
 
 ## Get a credential
 
-See [docs/get-a-credential.md](../docs/get-a-credential.md). Today: a
-bearer token in `ACR_MCP_TOKEN`. Export it before starting Codex if you
-use the bearer variant. The plugin's default `config.toml` table uses
-OAuth (`codex mcp login dev-health`); OAuth needs CHAOS-6184 live on
-prod, so use the bearer variant until then.
+See [docs/get-a-credential.md](../docs/get-a-credential.md). Default: no
+credential to get — the plugin's `config.toml` table uses OAuth
+(`codex mcp login dev-health`; CHAOS-6184 is live on prod). For headless
+or CI use, export a bearer token in `ACR_MCP_TOKEN` before starting Codex
+and use `configs/config.bearer.toml` instead.
 
 ## Verify
 
@@ -106,7 +106,7 @@ request was never decided — retry later. See `docs/mcp-sidecar.md`
 
 - Plugin layout confirmed two ways: vendor docs (<https://developers.openai.com/codex/plugins/build> lists `.codex-plugin/plugin.json` as the supported compatibility manifest, and `.agents/plugins/marketplace.json` with `source.path` starting `./`) and an executed run: `codex plugin marketplace add`, `codex plugin add`, then the skill appears as `dev-health:dev-health` in `codex debug prompt-input` and the MCP entry in `codex mcp list`. Newer docs prefer a root `plugin.json` with `$schema`; the `.codex-plugin/` form stays supported.
 - Codex 0.155.1 speaks `initialize` at protocol revision 2025-06-18, not 2026-07-28. It works against the hosted server. Never ask for a server change for it (CHAOS-6166).
-- OAuth: `auth` defaults to `oauth`; `codex mcp login dev-health` starts sign-in. OAuth on prod needs CHAOS-6184 live there.
+- OAuth: `auth` defaults to `oauth`; `codex mcp login dev-health` starts sign-in. CHAOS-6184 is live on prod; the plugin's `config.toml` table ships this as the default (CHAOS-6208).
 - Codex does not reject unknown keys in `[mcp_servers.*]` (`--strict-config` is refused by `codex mcp`); it does reject wrong types. The repo's own validator (`internal/render`) rejects unknown keys.
 - No `codex mcp` subcommand connects: `list` and `get` only read config. Connect-only proof: `codex app-server` JSON-RPC `mcpServerStatus/list` (used by `proof/mcp_status.py`). It needs no LLM key and no OpenAI login.
 

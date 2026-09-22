@@ -20,16 +20,17 @@ entry and, for the bearer variant, the `inputs` entry.
 
 | Variant | File |
 | --- | --- |
-| Bearer (password-prompt input) | [`configs/mcp.bearer.json`](configs/mcp.bearer.json) |
-| OAuth (VS Code-driven login) | [`configs/mcp.oauth.json`](configs/mcp.oauth.json) |
+| OAuth (default, VS Code-driven login) | [`configs/mcp.oauth.json`](configs/mcp.oauth.json) |
+| Bearer (headless/CI, password-prompt input) | [`configs/mcp.bearer.json`](configs/mcp.bearer.json) |
 
-- **Bearer**: the file declares one `inputs` entry, `acr-mcp-token`, a
-  `promptString` with `password: true`. VS Code prompts for the token the
-  first time it connects and expands `${input:acr-mcp-token}` into the
-  header itself; the token is never written into the config file.
-- **OAuth**: no `inputs`, no `headers` key. VS Code discovers the
+- **OAuth (default)**: no `inputs`, no `headers` key. VS Code discovers the
   authorization server from the hosted server's 401 challenge and runs its
   own login flow.
+- **Bearer (headless/CI)**: the file declares one `inputs` entry,
+  `acr-mcp-token`, a `promptString` with `password: true`. VS Code prompts
+  for the token the first time it connects and expands
+  `${input:acr-mcp-token}` into the header itself; the token is never
+  written into the config file.
 
 ## Skill
 
@@ -46,10 +47,11 @@ VS Code loads project skills from `.github/skills/<name>/SKILL.md` (also
 
 ## Get a credential
 
-See [../docs/get-a-credential.md](../docs/get-a-credential.md). Today: a
-bearer token. VS Code prompts for it the first time it connects (the
-`acr-mcp-token` input) — you don't export an environment variable
-yourself for this client.
+See [../docs/get-a-credential.md](../docs/get-a-credential.md). Default:
+no credential to get — VS Code logs in itself on first connect (OAuth).
+For headless/CI use, the bearer variant: VS Code prompts for a token the
+first time it connects (the `acr-mcp-token` input) — you don't export an
+environment variable yourself for this client.
 
 ## Verify
 

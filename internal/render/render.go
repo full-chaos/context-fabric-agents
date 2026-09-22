@@ -125,8 +125,11 @@ func ConfigPath(c Client, v Variant) string {
 }
 
 // PluginMCPPath is the repo-relative path of the Claude Code plugin's
-// `.mcp.json`. It is the bearer variant of the Claude Code config (CHAOS-6201:
-// v0.1.0 ships the bearer variant; the OAuth variant follows CHAOS-6208).
+// `.mcp.json`. It is the OAuth variant of the Claude Code config (CHAOS-6201
+// shipped the bearer variant for v0.1.0; CHAOS-6208 flips the default to
+// OAuth discovery now that it is live on prod. The bearer variant stays
+// documented and rendered at plugins/configs/claude-code.bearer.mcp.json for
+// headless/CI use).
 const PluginMCPPath = "plugins/dev-health/.mcp.json"
 
 // AddCommandPath returns the repo-relative path of the Claude Code
@@ -196,11 +199,11 @@ func Artifacts(skill string) ([]Artifact, error) {
 			out = append(out, Artifact{Path: ConfigPath(c, v), Kind: KindConfig, Client: c, Variant: v, Content: content})
 		}
 	}
-	pluginMCP, err := Render(ClaudeCode, Bearer)
+	pluginMCP, err := Render(ClaudeCode, OAuth)
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, Artifact{Path: PluginMCPPath, Kind: KindConfig, Client: ClaudeCode, Variant: Bearer, Content: pluginMCP})
+	out = append(out, Artifact{Path: PluginMCPPath, Kind: KindConfig, Client: ClaudeCode, Variant: OAuth, Content: pluginMCP})
 	for _, v := range Variants {
 		out = append(out, Artifact{Path: AddCommandPath(v), Kind: KindCommand, Client: ClaudeCode, Variant: v, Content: RenderClaudeCodeAddCommand(v)})
 	}

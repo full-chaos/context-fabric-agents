@@ -16,15 +16,15 @@ existing file; merge in the `dev-health` entry.
 
 | Variant | File |
 | --- | --- |
-| Bearer (token env var) | [`configs/mcp.bearer.json`](configs/mcp.bearer.json) |
-| OAuth (Cursor-driven login) | [`configs/mcp.oauth.json`](configs/mcp.oauth.json) |
+| OAuth (default, Cursor-driven login) | [`configs/mcp.oauth.json`](configs/mcp.oauth.json) |
+| Bearer (headless/CI, token env var) | [`configs/mcp.bearer.json`](configs/mcp.bearer.json) |
 
-- **Bearer**: export `ACR_MCP_TOKEN` in the environment Cursor starts from.
-  Cursor expands `${env:ACR_MCP_TOKEN}` itself; the token is never written
-  into the config file.
-- **OAuth**: no `headers` key at all. Per the cited doc, a server entry with
-  no `headers`/auth object means Cursor runs dynamic client registration
-  and its own OAuth login on first connect.
+- **OAuth (default)**: no `headers` key at all. Per the cited doc, a server
+  entry with no `headers`/auth object means Cursor runs dynamic client
+  registration and its own OAuth login on first connect.
+- **Bearer (headless/CI)**: export `ACR_MCP_TOKEN` in the environment Cursor
+  starts from. Cursor expands `${env:ACR_MCP_TOKEN}` itself; the token is
+  never written into the config file.
 
 ## Skill
 
@@ -41,8 +41,10 @@ equivalent).
 
 ## Get a credential
 
-See [../docs/get-a-credential.md](../docs/get-a-credential.md). Today: a
-bearer token in `ACR_MCP_TOKEN`, set before you start Cursor.
+See [../docs/get-a-credential.md](../docs/get-a-credential.md). Default:
+no credential to get — Cursor logs in itself on first connect (OAuth).
+For headless/CI use, a bearer token in `ACR_MCP_TOKEN`, set before you
+start Cursor.
 
 ## Verify
 

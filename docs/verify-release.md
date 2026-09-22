@@ -14,7 +14,7 @@ Release assets for tag `vX.Y.Z`:
 Set these once:
 
 ```sh
-TAG=v0.1.0
+TAG=v0.2.0
 REPO=full-chaos/context-fabric-agents
 gh release download "$TAG" --repo "$REPO" --dir release && cd release
 ```
