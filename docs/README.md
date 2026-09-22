@@ -15,5 +15,4 @@ for every client.
 | [verify-release.md](verify-release.md) | `cosign verify-blob` / `gh attestation verify` for a downloaded release asset (CHAOS-6200) |
 
 `verify-release.md` ships with the signed release pipeline (CHAOS-6200,
-PR #3). If that PR has not merged yet, the link above is a preview of the
-path it will land at; do not duplicate its content here.
+PR #3, merged). This directory does not duplicate its content.
