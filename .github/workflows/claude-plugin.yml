@@ -1,8 +1,14 @@
 name: claude-plugin
 
 # CHAOS-6201. validate: offline manifest validation with a pinned Claude Code.
-# live: clean HOME, marketplace add -> install -> `claude mcp list` against the
-# hosted server. The token is a repository secret and is never printed.
+# live: clean HOME, marketplace add -> install. The plugin's own `.mcp.json`
+# is the OAuth variant (CHAOS-6208 default), which needs a browser to
+# complete login, so this job proves it structurally only ("Needs
+# authentication", no secret used) and then proves a real connect + the
+# malformed-bearer negative control against the bearer config ARTIFACT
+# (plugins/configs/claude-code.bearer.mcp.json), added separately with
+# `claude mcp add` — not through the plugin. The token is a repository
+# secret and is never printed.
 on:
   pull_request:
     paths:
@@ -105,18 +111,29 @@ jobs:
           claude plugin install dev-health@dev-health
           claude plugin list
           echo "HOME=$HOME" >> "$GITHUB_ENV"
+      - name: Plugin's OAuth-default entry needs authentication (structural, no secret, no browser)
+        run: |
+          unset CLAUDE_CONFIG_DIR ACR_MCP_TOKEN
+          timeout 120 claude mcp list | tee "$RUNNER_TEMP/plugin.txt"
+          line=$(grep '^plugin:dev-health:dev-health:' "$RUNNER_TEMP/plugin.txt")
+          case "$line" in *"Needs authentication"*) echo "OAuth-default entry confirmed (no browser in CI, so no login attempted)" ;;
+            *) echo "::error::expected plugin:dev-health:dev-health to need authentication (got: $line)"; exit 1 ;; esac
+      - name: Add the bearer config ARTIFACT directly (not through the plugin) for the headless connect proof
+        run: |
+          unset CLAUDE_CONFIG_DIR ACR_MCP_TOKEN
+          bash plugins/configs/claude-code.bearer.add.txt
       - name: Unset ACR_MCP_TOKEN gives a malformed bearer, HTTP 401 (documented behaviour)
         run: |
           unset CLAUDE_CONFIG_DIR ACR_MCP_TOKEN
           timeout 120 claude mcp list | tee "$RUNNER_TEMP/unset.txt"
-          line=$(grep '^plugin:dev-health:dev-health:' "$RUNNER_TEMP/unset.txt")
+          line=$(grep '^dev-health:' "$RUNNER_TEMP/unset.txt")
           case "$line" in *"HTTP 401"*"malformed_bearer"*) echo "unset-env behaviour confirmed" ;;
             *) echo "::error::expected a 401 malformed_bearer failure with ACR_MCP_TOKEN unset"; exit 1 ;; esac
-      - name: With ACR_MCP_TOKEN set, dev-health is Connected to prod
+      - name: With ACR_MCP_TOKEN set, the bearer artifact is Connected to prod
         env:
           ACR_MCP_TOKEN: ${{ secrets.ACR_MCP_CI_BEARER }}
         run: |
           unset CLAUDE_CONFIG_DIR
           timeout 120 claude mcp list | sed "s/${ACR_MCP_TOKEN}/<redacted>/g" | tee "$RUNNER_TEMP/set.txt"
-          grep -q '^plugin:dev-health:dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ✔ Connected' "$RUNNER_TEMP/set.txt" \
-            || { echo "::error::dev-health is not Connected with the token set"; exit 1; }
+          grep -q '^dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ✔ Connected' "$RUNNER_TEMP/set.txt" \
+            || { echo "::error::dev-health (bearer artifact) is not Connected with the token set"; exit 1; }

@@ -1,40 +1,53 @@
 # plugins
 
-Claude Code plugin and marketplace entry for the hosted Dev Health MCP server (CHAOS-6201).
+Claude Code plugin and marketplace entry for the hosted Dev Health MCP server (CHAOS-6201, default auth flipped to OAuth in CHAOS-6208).
 
 - Marketplace: `.claude-plugin/marketplace.json` (name `dev-health`, one plugin, `source: ./plugins/dev-health`).
-- Plugin: `plugins/dev-health/` = `.claude-plugin/plugin.json`, `.mcp.json` (rendered by `cmd/render`, bearer variant) and `skills/dev-health/SKILL.md` (rendered copy). No hooks, no executables, no LSP or monitors (tests enforce it).
-- `plugins/configs/` holds the rendered Claude Code configs for manual use (`claude mcp add ...`).
+- Plugin: `plugins/dev-health/` = `.claude-plugin/plugin.json`, `.mcp.json` (rendered by `cmd/render`, OAuth variant: URL only) and `skills/dev-health/SKILL.md` (rendered copy). No hooks, no executables, no LSP or monitors (tests enforce it).
+- `plugins/configs/` holds the rendered Claude Code configs for manual use (`claude mcp add ...`), both variants.
 
-## Install (v0.1.0, bearer variant)
+## Install (default: OAuth discovery)
 
 ```
-export ACR_MCP_TOKEN=<your token>      # set BEFORE starting Claude Code
 claude
 /plugin marketplace add full-chaos/context-fabric-agents
 /plugin install dev-health@dev-health
 ```
 
-`claude mcp list` then shows `plugin:dev-health:dev-health` as `Connected`. Claude Code names a plugin's server `plugin:<plugin>:<server>`.
-
-### If `ACR_MCP_TOKEN` is unset
-
-The plugin sends `Authorization: Bearer ${ACR_MCP_TOKEN}`. With the variable unset the header carries no valid credential (the exact bytes Claude Code sends are not verified), the server answers HTTP 401 `malformed_bearer`, and Claude Code does not fall back to OAuth when an `Authorization` header is configured. `claude mcp list` shows:
+No token to export. The plugin's `.mcp.json` carries the URL only; Claude Code discovers the authorization server from the hosted server's 401 challenge. `claude mcp list` shows `plugin:dev-health:dev-health` as `! Needs authentication` until you sign in:
 
 ```
-plugin:dev-health:dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ✘ Failed to connect — Server rejected the configured Authorization header (HTTP 401). ... {"error":"malformed_bearer",...}
+/mcp
 ```
 
-Fix: export a valid token and restart Claude Code. The CI `claude-plugin` workflow proves both states on a clean HOME.
+pick `dev-health`, and approve the request at the web consent page. After that, `claude mcp list` shows `Connected` with no bearer token anywhere. Claude Code names a plugin's server `plugin:<plugin>:<server>`.
 
-The OAuth variant (no header, browser login) follows in CHAOS-6208, after OAuth discovery is live on prod.
+## Headless / CI: bearer variant
+
+OAuth needs a browser. For headless or CI use, add the bearer config directly instead of relying on the plugin's OAuth default:
+
+```
+export ACR_MCP_TOKEN=<your token>      # set BEFORE starting Claude Code
+claude mcp add --transport http dev-health-bearer https://mcp.fullchaos.dev/mcp \
+  --header 'Authorization: Bearer ${ACR_MCP_TOKEN}'
+```
+
+(or copy [`configs/claude-code.bearer.mcp.json`](configs/claude-code.bearer.mcp.json) / [`configs/claude-code.bearer.add.txt`](configs/claude-code.bearer.add.txt)). With the variable unset the header carries no valid credential (the exact bytes Claude Code sends are not verified), the server answers HTTP 401 `malformed_bearer`, and Claude Code does not fall back to OAuth when an `Authorization` header is configured:
+
+```
+dev-health-bearer: https://mcp.fullchaos.dev/mcp (HTTP) - ✘ Failed to connect — Server rejected the configured Authorization header (HTTP 401). ... {"error":"malformed_bearer",...}
+```
+
+Fix: export a valid token and restart Claude Code. The CI `claude-plugin` workflow proves both states on a clean HOME using this bearer path explicitly (CI has no browser, so it cannot complete the plugin's OAuth default).
 
 ## Get a credential
 
-See [docs/get-a-credential.md](../docs/get-a-credential.md). Today: a
-bearer token in `ACR_MCP_TOKEN`, from `acr-mcp login` (if you already run
-the STDIO CLI) or an operator-minted credential. Set it before you start
-Claude Code — Claude Code reads environment variables once, at launch.
+See [docs/get-a-credential.md](../docs/get-a-credential.md). Default: no
+credential to get — Claude Code logs in itself on first connect (`/mcp`,
+OAuth). For headless/CI use (see above), a bearer token in
+`ACR_MCP_TOKEN`, from `acr-mcp login` (if you already run the STDIO CLI)
+or an operator-minted credential. Set it before you start Claude Code —
+Claude Code reads environment variables once, at launch.
 
 ## Verify
 

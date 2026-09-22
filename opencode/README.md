@@ -16,18 +16,18 @@ Merge the file's content into your OpenCode config (project: `opencode.json`
 or `opencode.jsonc` at the repo root; global: `~/.config/opencode/opencode.json`).
 Don't just copy the file over an existing config — merge the `mcp` key.
 
-| OpenCode generation | Bearer (token env var) | OAuth (server-driven login) |
+| OpenCode generation | OAuth (default, server-driven login) | Bearer (headless/CI, token env var) |
 | --- | --- | --- |
-| v1 | [`configs/opencode.bearer.json`](configs/opencode.bearer.json) | [`configs/opencode.oauth.json`](configs/opencode.oauth.json) |
-| v2 | [`configs/opencode-v2.bearer.json`](configs/opencode-v2.bearer.json) | [`configs/opencode-v2.oauth.json`](configs/opencode-v2.oauth.json) |
+| v1 | [`configs/opencode.oauth.json`](configs/opencode.oauth.json) | [`configs/opencode.bearer.json`](configs/opencode.bearer.json) |
+| v2 | [`configs/opencode-v2.oauth.json`](configs/opencode-v2.oauth.json) | [`configs/opencode-v2.bearer.json`](configs/opencode-v2.bearer.json) |
 
-- **Bearer**: export `ACR_MCP_TOKEN` in the environment OpenCode starts
-  from. OpenCode expands `{env:ACR_MCP_TOKEN}` itself; the token is never
-  written into the config file. The bearer variant sets `"oauth": false` so
-  OpenCode does not also try to auto-detect OAuth.
-- **OAuth**: no token, no `headers` key. OpenCode discovers the
-  authorization server from the hosted server's 401 challenge and runs its
-  own login flow.
+- **OAuth (default)**: no token, no `headers` key; v2 additionally sets
+  `"oauth": {}`. OpenCode discovers the authorization server from the hosted
+  server's 401 challenge and runs its own login flow.
+- **Bearer (headless/CI)**: export `ACR_MCP_TOKEN` in the environment
+  OpenCode starts from. OpenCode expands `{env:ACR_MCP_TOKEN}` itself; the
+  token is never written into the config file. The bearer variant sets
+  `"oauth": false` so OpenCode does not also try to auto-detect OAuth.
 
 v2 additionally sets `"protocol": "auto"` (negotiate the server's revision
 rather than pin one).
@@ -46,8 +46,10 @@ project (or the global equivalent).
 
 ## Get a credential
 
-See [../docs/get-a-credential.md](../docs/get-a-credential.md). Today: a
-bearer token in `ACR_MCP_TOKEN`, set before you start OpenCode.
+See [../docs/get-a-credential.md](../docs/get-a-credential.md). Default:
+no credential to get — OpenCode logs in itself on first connect (OAuth).
+For headless/CI use, a bearer token in `ACR_MCP_TOKEN`, set before you
+start OpenCode.
 
 ## Verify
 

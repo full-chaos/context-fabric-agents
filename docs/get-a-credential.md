@@ -1,10 +1,17 @@
 # Get a credential
 
-Every client here needs one bearer token, in the environment variable
-`ACR_MCP_TOKEN`. This page explains where the token comes from. Each
+Default: no credential to get. Every client's config names the hosted
+server's URL only (CHAOS-6184 OAuth discovery, live on prod; default
+flipped in CHAOS-6208), and the client logs in itself on first connect: it
+gets a `401` naming the authorization server, registers, and opens your
+browser to approve. No token to copy, no environment variable to set.
+
+For headless or CI use — no browser to complete a login — every client also
+has a bearer variant: one token, in the environment variable
+`ACR_MCP_TOKEN`. This page explains where that token comes from. Each
 client's own README shows the exact command to set the variable.
 
-## Today: bearer token
+## Headless/CI: bearer token
 
 Two ways to get one.
 
@@ -24,22 +31,11 @@ configs only. If you need the STDIO CLI, see the ACR project's own docs.
 ## Rules for every credential
 
 - Never write a token into a config file, a repository, or a chat message.
-  Every config in this repo expands `ACR_MCP_TOKEN` from the environment;
-  it never contains a literal token.
+  Every bearer config in this repo expands `ACR_MCP_TOKEN` from the
+  environment; it never contains a literal token. The OAuth (default)
+  configs carry no credential at all.
 - A token you did not mint yourself is not yours to keep. If you no longer
   need it, ask the operator to revoke it.
 - A leaked or expired token fails closed: the server answers `401` and
   never falls back to a weaker check. See each client's Troubleshooting
   section for the exact error codes.
-
-## After OAuth ships
-
-<!-- CHAOS-6184 (OAuth 2.1 discovery + PKCE login) is approved but not yet
-     deployed on prod; CHAOS-6208 switches these configs to the OAuth
-     variant once it is. Do not claim this as available today. -->
-
-Once CHAOS-6184 is live on `mcp.fullchaos.dev`, a client that supports MCP
-authorization logs in by itself: it gets a `401` naming the authorization
-server, registers, and opens your browser to approve. No token to copy, no
-environment variable to set. Until then, and always for headless or CI use,
-use the bearer token above.

@@ -14,11 +14,16 @@ name: liveness
 # 2026-07-28 _meta triple plus an Mcp-Method header) lives on in step
 # e_unauth of liveness/internal/l1. A missing credential is a RED run.
 #
+# L3 (CHAOS-6208) is the OAuth discovery chain: unauthenticated 401 ->
+# resource_metadata -> protected-resource metadata -> authorization-server
+# metadata. It uses no credential (nothing to mask) and never registers a
+# client (liveness/internal/l3, liveness/README.md).
+#
 # The credential is the repository secret ACR_MCP_CI_BEARER (no `liveness`
 # environment: the secret value cannot be moved without re-minting; see
 # liveness/README.md). Host and repository are compiled constants in
-# liveness/probe; workflow_dispatch has no inputs. Nothing prints the
-# credential, response headers or bodies.
+# liveness/probe and liveness/l3; workflow_dispatch has no inputs. Nothing
+# prints the credential, response headers or bodies.
 on:
   schedule:
     - cron: '41 */6 * * *'
@@ -60,9 +65,33 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  l3:
+    name: l3 OAuth discovery chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Run the L3 probe (writes results/l3.json on pass and on fail; no credential used)
+        run: go run ./liveness/l3 -out results/l3.json
+      - name: Upload the result record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: liveness-result-l3
+          path: results/l3.json
+          if-no-files-found: error
+          retention-days: 30
+
   aggregate:
     name: aggregate
-    needs: [l1]
+    needs: [l1, l3]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

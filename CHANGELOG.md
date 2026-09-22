@@ -26,6 +26,22 @@ version gate checks the release tag against these manifests directly; the `workf
 dry run checks `VERSION` instead, so keep `VERSION` in step with the manifests or the dry
 run goes red for no code reason.
 
+**Pre-1.0 convention:** this repo has not cut `v1.0.0` yet, so a change the table above
+calls "major" bumps the minor digit instead (`0.x.0 -> 0.(x+1).0`), per semver's own
+"anything may change" rule for `0.y.z`. The bump becomes a real major (`1.0.0+`) once the
+repo has shipped a `v1.0.0` release.
+
+## [Unreleased] - 0.2.0
+
+- Liveness L3: OAuth discovery chain probe (unauthenticated 401 -> resource_metadata ->
+  protected-resource metadata -> authorization-server metadata), `results/l3.json` into the
+  fail-loud aggregator. `l3-register` (daily dynamic-client-registration proof) is
+  `declared-off` until CHAOS-6191 (idle client purge) lands.
+- **Default auth flipped to OAuth discovery** for every client that supports it (Claude
+  Code plugin `.mcp.json`, Codex, OpenCode v2, Cursor, VS Code), now that CHAOS-6184 is
+  live on prod. Bearer variants stay documented and rendered for headless/CI use. Per the
+  release rule above and the pre-1.0 convention, this is `0.1.0 -> 0.2.0`.
+
 ## [Unreleased] - 0.1.0
 
 - Bootstrap: repository skeleton, license, security policy, baseline CI.

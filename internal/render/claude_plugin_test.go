@@ -165,7 +165,7 @@ func TestPluginManifestCheckDetectsPlantedDefects(t *testing.T) {
 	}
 	cases := map[string]string{
 		"misspelled license": strings.Replace(good, `"license"`, `"licence"`, 1),
-		"bad version":        strings.Replace(good, `"0.1.0"`, `"v0.1"`, 1),
+		"bad version":        strings.Replace(good, `"0.2.0"`, `"v0.1"`, 1),
 		"hooks key":          strings.Replace(good, `"name": "dev-health",`, `"name": "dev-health", "hooks": {},`, 1),
 		"mcpServers inline":  strings.Replace(good, `"name": "dev-health",`, `"name": "dev-health", "mcpServers": {},`, 1),
 		"wrong name":         strings.Replace(good, `"name": "dev-health",`, `"name": "x",`, 1),
@@ -180,15 +180,22 @@ func TestPluginManifestCheckDetectsPlantedDefects(t *testing.T) {
 	}
 }
 
-// The plugin's .mcp.json is the rendered Claude Code bearer config, byte for
-// byte, and is the only MCP entry of the plugin.
-func TestPluginMCPJSONIsTheRenderedBearerConfig(t *testing.T) {
-	want, err := Render(ClaudeCode, Bearer)
+// The plugin's .mcp.json is the rendered Claude Code OAuth config, byte for
+// byte (CHAOS-6208: default auth flipped to OAuth discovery), and is the
+// only MCP entry of the plugin. It carries no Authorization header, no
+// headers key and no credential name.
+func TestPluginMCPJSONIsTheRenderedOAuthConfig(t *testing.T) {
+	want, err := Render(ClaudeCode, OAuth)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := readRepoFile(t, PluginMCPPath); got != want {
 		t.Fatalf("%s differs from the renderer output (run cmd/render -write)", PluginMCPPath)
+	}
+	for _, banned := range []string{"headers", "Authorization", "Bearer", TokenEnvVar} {
+		if strings.Contains(want, banned) {
+			t.Fatalf("%s: OAuth variant must not contain %q", PluginMCPPath, banned)
+		}
 	}
 	arts, err := LoadArtifacts(repoRoot(t))
 	if err != nil {

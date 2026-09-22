@@ -1,7 +1,7 @@
 # liveness
 
 Scheduled liveness for the hosted MCP (`https://mcp.fullchaos.dev/mcp`).
-Workflows: `.github/workflows/liveness.yml` (L1; every 6 h at :41) and
+Workflows: `.github/workflows/liveness.yml` (L1 + L3; every 6 h at :41) and
 `.github/workflows/liveness-l2.yml` (L2; every 6 h at 03:11, 09:11, 15:11,
 21:11 UTC, offset 3.5 h from L1), both with `workflow_dispatch` (no inputs).
 Credential runbook: [RUNBOOK.md](RUNBOOK.md).
@@ -92,6 +92,29 @@ lock, `compat.json`, `legs.json` and `liveness-l2.yml` disagree. Same-repo
 PRs that touch these inputs run the matrix too (a red PR run does not open
 the failure issue).
 
+## L3 OAuth discovery chain (`liveness/l3`, CHAOS-6208)
+
+Unauthenticated: no credential, no consent, no token. Endpoint is the
+compiled constant `https://mcp.fullchaos.dev/mcp`.
+
+| Step | Pass when |
+| --- | --- |
+| `a_unauth` | an unauthenticated POST is 401 with one `Bearer` challenge whose `resource_metadata` parameter is `https://<host>/.well-known/oauth-protected-resource...` |
+| `b_prm` | that URL returns 200; `resource` equals the probed endpoint; `authorization_servers` is non-empty |
+| `c_asmeta` | the first authorization server's metadata (`<issuer>/.well-known/oauth-authorization-server`, RFC 8414) returns 200; `code_challenge_methods_supported` contains `S256`; `registration_endpoint` is present (DCR advertised; CIMD, CHAOS-6192, is not live) |
+
+`results/l3.json` follows the same result schema as L1. Kill proof: point the
+probe at a path with no PRM (no 401 challenge at all) and every step is red
+(`liveness/internal/l3/probe_test.go: TestProbePointedAtAPathWithoutPRM`; a
+live run reproduces this against a real path with no OAuth wiring).
+
+The daily proof that dynamic registration actually returns 201
+(`POST /register`) is a **separate** leg, `l3-register`, `declared-off` until
+CHAOS-6191 (idle client purge) lands — registering a client every 6 h with no
+purge would leak an ever-growing set of dead clients. It is never folded into
+`l3`'s required steps: a `declared-off` leg carries its own reason and issue
+link in `legs.json`, so its absence is visible, not silent.
+
 ## Aggregator (`aggregate`)
 
 Runs `if: always()` after every leg job, with `toJSON(needs)` and
@@ -117,11 +140,14 @@ revision, notes). A red run makes the `report` job (the only job with
   read back to copy it.
 - The trial leg is `declared-off`: trial hosts sit behind Cloudflare Access
   by design (CHAOS-6222).
+- The `l3-register` leg is `declared-off`: daily dynamic-client registration
+  waits on CHAOS-6191 (idle client purge).
 
 ## Local run
 
     go run ./liveness/probe -out results/l1.json    # needs ACR_MCP_CI_BEARER
-    NEEDS='{"l1":{"result":"success"}}' go run ./liveness/aggregate -workflow liveness.yml
+    go run ./liveness/l3 -out results/l3.json        # no credential
+    NEEDS='{"l1":{"result":"success"},"l3":{"result":"success"}}' go run ./liveness/aggregate -workflow liveness.yml
 
     # L2, one client (pinned client on PATH; needs ACR_MCP_CI_BEARER)
     go run ./liveness/proxy -listen 127.0.0.1:18765 -record /tmp/rec.jsonl &
