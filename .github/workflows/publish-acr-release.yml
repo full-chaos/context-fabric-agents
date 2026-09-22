@@ -1,0 +1,302 @@
+name: publish-acr-release
+
+# CHAOS-6211: mirrors the acr-mcp / acr-api release assets (binaries,
+# SBOMs, SHA256SUMS, sigstore bundle, release manifests) from the private
+# full-chaos/dev-health-acr repo into a public Release on THIS repo, so the
+# STDIO binary stays reachable once acr goes private.
+#
+# Design (fewest new secrets): this workflow reads FROM acr using a single
+# read-only secret (ACR_RELEASE_READ_TOKEN, Contents: Read on
+# full-chaos/dev-health-acr) and writes to this repo's own Releases using
+# the ambient GITHUB_TOKEN (contents: write). The alternative -- acr's own
+# release.yml pushing cross-repo with a cfa-write token -- would put a
+# write-scoped secret for a DIFFERENT repo inside acr's own secret store,
+# which is the more sensitive repo pre-flip; keeping the write credential
+# local to the repo it writes to, and only a narrow read credential in the
+# lower-trust distribution repo, is the smaller blast radius for an equal
+# secret count (one either way).
+#
+# Independent re-verification, not a blind copy: after download this job
+# re-runs cosign verify-blob against acr's own SHA256SUMS + sigstore bundle,
+# checked against acr release.yml's signer identity
+# (github.com/full-chaos/dev-health-acr/.github/workflows/release.yml@refs/
+# {heads/main,tags/vX.Y.Z}), and re-checks every asset's sha256 before
+# republishing anything.
+#
+# acr and cfa version independently -- acr has never cut a matching vX.Y.Z
+# tag with real release assets (only its main-<sha> channel does), so a v*
+# tag push on THIS repo cannot assume an acr tag of the same name exists.
+# contracts/acr-mcp/release.txt pins the acr release this repo mirrors on a
+# tag push; bump it in the same PR that bumps VERSION for a new cfa release.
+# workflow_dispatch keeps the explicit acr_release_tag input for a one-off
+# mirror (e.g. proving the workflow before any pin/tag exists).
+#
+# Triggered by release.yml's own COMPLETION (workflow_run), never directly by
+# the v* tag push: release.yml and this workflow both used to trigger on the
+# same `push: tags: ['v*']`, which raced -- if this workflow created the
+# GitHub Release first, release.yml's own `gh release create --verify-tag`
+# then failed with `already_exists`, breaking cfa's existing, working release
+# pipeline (codex round cf-6211-r2, executed repro). workflow_run guarantees
+# release.yml's publish job has already run (and, on success, already created
+# the Release) before this workflow starts, so this workflow only ever
+# UPLOADS into an existing Release on the tag-triggered path -- it never
+# races release.yml for who creates it.
+on:
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      acr_release_tag:
+        description: >-
+          acr GitHub Release tag to mirror (e.g. main-<sha> or vX.Y.Z).
+          Required for a manual run; a v* tag push on this repo instead reads
+          contracts/acr-mcp/release.txt (acr and cfa version independently,
+          so nothing assumes a matching acr v* tag exists).
+        required: true
+        type: string
+      publish_as:
+        description: >-
+          Override the cfa release tag/name this run publishes to. Use this
+          for a proof run against an acr main-<sha> release, before any v*
+          tag exists on either repo (e.g. acr-mcp-<sha>). Leave blank on a
+          real v* release -- it defaults to this repo's own tag.
+        required: false
+        type: string
+      prerelease:
+        description: Mark the published cfa release as a prerelease (use for proof/dry runs).
+        required: false
+        default: false
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: publish-acr-release-${{ github.event.inputs.publish_as || github.event.inputs.acr_release_tag || github.event.workflow_run.head_branch || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  ACR_REPO: full-chaos/dev-health-acr
+  # acr's release.yml identity regexp (scripts/release/publish-ci-release.sh),
+  # copied verbatim so a drift between the two is visible in review, not
+  # silently divergent.
+  ACR_SIGNER_IDENTITY_REGEXP: >-
+    ^https://github\.com/full-chaos/dev-health-acr/\.github/workflows/release\.yml@refs/(heads/main|tags/v[0-9]+\.[0-9]+\.[0-9]+(-(dev|beta)\.[0-9]+)?)$
+  ACR_OIDC_ISSUER: https://token.actions.githubusercontent.com
+
+jobs:
+  mirror:
+    name: download, re-verify, republish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Resolve source and destination tags
+        id: tags
+        # No actions/checkout here on purpose: a `workflow_run`-triggered job
+        # runs with this repo's full permissions/secrets, and CodeQL flags
+        # (rightly, as a general rule regardless of what release.yml's own
+        # triggers happen to be) checking an event-supplied ref out into the
+        # workspace of a privileged job as "checkout of untrusted code in a
+        # privileged context" -- caught on this PR's own CI. The pin file is
+        # fetched read-only via the Contents API instead, pinned to the exact
+        # commit release.yml ran for (github.event.workflow_run.head_sha),
+        # never written into the workspace or executed.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ACR_TAG: ${{ github.event.inputs.acr_release_tag }}
+          INPUT_PUBLISH_AS: ${{ github.event.inputs.publish_as }}
+          INPUT_PRERELEASE: ${{ github.event.inputs.prerelease }}
+          WR_EVENT: ${{ github.event.workflow_run.event }}
+          WR_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WR_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WR_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          proceed=true
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            # Only a v* TAG push into release.yml that SUCCEEDED means "a new
+            # cfa Release now exists to mirror into" -- a workflow_dispatch
+            # dry run of release.yml (no tag, no Release) or any failed run
+            # produces a workflow_run event too, and must be a silent no-op
+            # here, not an error (this workflow has no bearing on whether
+            # release.yml itself failed).
+            case "$WR_HEAD_BRANCH" in
+              v*) : ;;
+              *)
+                echo "::notice::release run was not for a v* tag ($WR_HEAD_BRANCH) -- nothing to mirror"
+                proceed=false
+                ;;
+            esac
+            if [ "$proceed" = true ] && { [ "$WR_EVENT" != "push" ] || [ "$WR_CONCLUSION" != "success" ]; }; then
+              echo "::notice::release run was not a successful tag push (event=$WR_EVENT conclusion=$WR_CONCLUSION) -- nothing to mirror"
+              proceed=false
+            fi
+            if [ "$proceed" = true ]; then
+              # Pinned to the exact commit release.yml ran for -- never the
+              # default branch's current tip, which could have moved the pin
+              # again before this run started.
+              pin_json="$(gh api "repos/${{ github.repository }}/contents/contracts/acr-mcp/release.txt?ref=${WR_HEAD_SHA}")"
+              acr_tag="$(printf '%s' "$pin_json" | jq -r '.content' | base64 -d | tr -d '[:space:]')"
+              [ -n "$acr_tag" ] || { echo "::error::contracts/acr-mcp/release.txt is missing or blank at ${WR_HEAD_SHA}"; exit 1; }
+              cfa_tag="$WR_HEAD_BRANCH"
+              prerelease=false
+            else
+              acr_tag=""
+              cfa_tag=""
+              prerelease=""
+            fi
+          else
+            [ -n "$INPUT_ACR_TAG" ] || { echo "::error::acr_release_tag is required for workflow_dispatch"; exit 1; }
+            acr_tag="$INPUT_ACR_TAG"
+            cfa_tag="${INPUT_PUBLISH_AS:-$INPUT_ACR_TAG}"
+            prerelease="${INPUT_PRERELEASE:-false}"
+          fi
+          {
+            echo "proceed=$proceed"
+            echo "acr_tag=$acr_tag"
+            echo "cfa_tag=$cfa_tag"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$proceed" = true ]; then
+            echo "mirroring acr release '$acr_tag' -> cfa release '$cfa_tag' (prerelease=$prerelease)"
+          fi
+
+      - name: Download acr release assets
+        if: steps.tags.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.ACR_RELEASE_READ_TOKEN }}
+          ACR_TAG: ${{ steps.tags.outputs.acr_tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::ACR_RELEASE_READ_TOKEN secret is not set (needs Contents: Read on ${ACR_REPO})"
+            exit 1
+          fi
+          mkdir -p acr-dist
+          gh release download "$ACR_TAG" --repo "$ACR_REPO" --dir acr-dist
+          test -f acr-dist/SHA256SUMS || { echo "::error::acr release is missing SHA256SUMS"; exit 1; }
+          test -f acr-dist/SHA256SUMS.sigstore.json || { echo "::error::acr release is missing SHA256SUMS.sigstore.json"; exit 1; }
+
+      - name: Install cosign v2.6.5 (SHA-256 pinned; GitHub-owned Actions allow-list only)
+        if: steps.tags.outputs.proceed == 'true'
+        env:
+          COSIGN_VERSION: v2.6.5
+          COSIGN_SHA256: c3b4f5410e608af03a5eb0aaac84a4313d8da131248e08ff1759ac70c79d1644
+        run: |
+          set -euo pipefail
+          curl -fsSL -o cosign "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
+          echo "${COSIGN_SHA256}  cosign" | sha256sum --check
+          sudo install -m 0755 cosign /usr/local/bin/cosign
+          cosign version
+
+      - name: Re-verify acr's cosign signature and checksums independently
+        if: steps.tags.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          cosign verify-blob acr-dist/SHA256SUMS \
+            --bundle acr-dist/SHA256SUMS.sigstore.json \
+            --certificate-identity-regexp "$ACR_SIGNER_IDENTITY_REGEXP" \
+            --certificate-oidc-issuer "$ACR_OIDC_ISSUER"
+          (cd acr-dist && sha256sum --check SHA256SUMS)
+
+          # Every downloaded file must be EITHER SHA256SUMS/its sigstore bundle
+          # OR a file the (now signature-verified) SHA256SUMS itself lists --
+          # sha256sum --check only proves the listed files are correct, it
+          # says nothing about an EXTRA, unlisted file riding along in the
+          # same download. Assert the file SET matches exactly, both ways.
+          (
+            cd acr-dist
+            { printf '%s\n' SHA256SUMS SHA256SUMS.sigstore.json; awk '{print $2}' SHA256SUMS; } \
+              | LC_ALL=C sort -u > /tmp/expected-assets
+            find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > /tmp/actual-assets
+            if ! cmp -s /tmp/expected-assets /tmp/actual-assets; then
+              echo "::error::acr-dist contains an unlisted or missing asset -- refusing to publish"
+              diff /tmp/expected-assets /tmp/actual-assets || true
+              exit 1
+            fi
+          )
+
+          # Completeness: the whole point of this workflow is the acr-mcp
+          # (and acr-api) BINARY archives; a checksum-clean source set
+          # containing only SBOMs/manifests for a product (no actual
+          # .tar.gz/.zip archive) must never publish as if it were complete.
+          # An unsuffixed 'acr-mcp_*' glob matched acr-mcp_<version>.spdx.json
+          # too -- codex round cf-6211-r3, executed repro -- so this checks
+          # the archive extensions explicitly, not just the product prefix.
+          for prefix in acr-mcp acr-api; do
+            # shellcheck disable=SC2144
+            if ! compgen -G "acr-dist/${prefix}_*.tar.gz" >/dev/null \
+              && ! compgen -G "acr-dist/${prefix}_*.zip" >/dev/null; then
+              echo "::error::no ${prefix} binary archive (.tar.gz/.zip) in the downloaded acr release -- refusing to publish"
+              exit 1
+            fi
+          done
+
+      - name: Stage published copies under collision-safe names
+        if: steps.tags.outputs.proceed == 'true'
+        # cfa's own release.yml already publishes a file literally named
+        # SHA256SUMS (covering ITS OWN client tarballs) into the SAME
+        # GitHub Release this workflow uploads into. `gh release upload
+        # --clobber` on an unrenamed SHA256SUMS would overwrite cfa's own
+        # checksum manifest with acr's, invalidating verification of cfa's
+        # own tarballs (codex round cf-6211-r2, executed repro). Publish
+        # under acr-mcp-prefixed names instead; the verification steps
+        # above already ran against the original acr-dist/ names, so
+        # renaming a COPY at this point does not weaken anything they
+        # already proved (cosign verifies content, not filename).
+        run: |
+          set -euo pipefail
+          rm -rf acr-publish
+          mkdir -p acr-publish
+          for f in acr-dist/*; do
+            name="$(basename "$f")"
+            case "$name" in
+              SHA256SUMS) cp "$f" "acr-publish/acr-mcp-SHA256SUMS" ;;
+              SHA256SUMS.sigstore.json) cp "$f" "acr-publish/acr-mcp-SHA256SUMS.sigstore.json" ;;
+              *) cp "$f" "acr-publish/$name" ;;
+            esac
+          done
+          echo "staged $(find acr-publish -maxdepth 1 -type f | wc -l) file(s) for publish"
+
+      - name: Publish or update the cfa release
+        if: steps.tags.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CFA_TAG: ${{ steps.tags.outputs.cfa_tag }}
+          ACR_TAG: ${{ steps.tags.outputs.acr_tag }}
+          PRERELEASE: ${{ steps.tags.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          notes="Mirrors acr-mcp/acr-api release assets from full-chaos/dev-health-acr@${ACR_TAG}, re-verified by this workflow (cosign + SHA256SUMS) before publication. Checksum/sigstore files are published as acr-mcp-SHA256SUMS / acr-mcp-SHA256SUMS.sigstore.json to avoid colliding with this repo's own release assets of the same generic name."
+          if gh release view "$CFA_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$CFA_TAG" acr-publish/* --repo "${{ github.repository }}" --clobber
+          else
+            flags=(--title "$CFA_TAG" --notes "$notes")
+            [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
+            gh release create "$CFA_TAG" acr-publish/* --repo "${{ github.repository }}" "${flags[@]}"
+          fi
+
+      - name: Anonymous asset reachability proof
+        if: steps.tags.outputs.proceed == 'true'
+        env:
+          CFA_TAG: ${{ steps.tags.outputs.cfa_tag }}
+        run: |
+          set -euo pipefail
+          echo "asset URLs (unauthenticated curl -sIL, expect 200 for each):"
+          bad=0
+          for f in acr-publish/*; do
+            name="$(basename "$f")"
+            url="https://github.com/${{ github.repository }}/releases/download/${CFA_TAG}/${name}"
+            code="$(curl -s -o /dev/null -w '%{http_code}' -IL "$url")"
+            printf '%s  %s\n' "$code" "$url"
+            if [ "$code" != "200" ]; then
+              bad=$((bad + 1))
+            fi
+          done
+          if [ "$bad" -ne 0 ]; then
+            echo "::error::${bad} asset URL(s) did not return 200 anonymously -- the publish is not actually reachable"
+            exit 1
+          fi
