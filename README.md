@@ -19,9 +19,9 @@ Protocol facts below were observed live on 2026-09-21.
 |---|---|---|---|
 | Claude Code | 2.1.278 | 2026-07-28 (`server/discover`) | `plugins/` (planned) |
 | Codex | 0.155.1 | 2025-06-18 (legacy `initialize`) | `codex/` (planned) |
-| OpenCode | v1 and v2 | not yet recorded | `opencode/` (planned) |
-| Cursor | - | not yet recorded | `cursor/` (planned) |
-| VS Code | - | not yet recorded | `vscode/` (planned) |
+| OpenCode | v1 and v2 | not yet recorded (v1 config checked live against the vendor schema in CI) | `opencode/` |
+| Cursor | - | not yet recorded | `cursor/` |
+| VS Code | - | not yet recorded | `vscode/` |
 
 ## Authentication
 
@@ -35,10 +35,14 @@ OAuth login follows under CHAOS-6184.
 | `plugins/` | Claude Code plugin |
 | `codex/`, `opencode/`, `cursor/`, `vscode/` | Per-client configs |
 | `skills/` | One shared skill text |
-| `contracts/acr-mcp/` | Snapshot of the live server contract |
+| `contracts/acr-mcp/` | Snapshot of the live server contract, `compat.json`, drift job ([details](contracts/acr-mcp/README.md)) |
 | `liveness/` | Scheduled liveness probes |
 | `cmd/`, `internal/` | Go renderer, probes, repository guards |
 | `docs/` | Install and usage docs |
+
+## Contract pin
+
+`contracts/acr-mcp/snapshot.json` pins the live server contract and a daily job opens a `contract-drift` PR when it changes. A contract widening is acknowledged by a merged snapshot PR before configs or skills use the new member. See [contracts/acr-mcp/README.md](contracts/acr-mcp/README.md).
 
 ## Contributing and security
 

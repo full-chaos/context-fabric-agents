@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "dev-health": {
+      "type": "http",
+      "url": "https://mcp.fullchaos.dev/mcp"
+    }
+  }
+}

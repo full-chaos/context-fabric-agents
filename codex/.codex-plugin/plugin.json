@@ -1,0 +1,12 @@
+{
+  "name": "dev-health",
+  "version": "0.1.0",
+  "description": "Ask engineering delivery questions and retrieve cited evidence through the Dev Health hosted MCP server.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Dev Health",
+    "shortDescription": "Investigate delivery questions with cited evidence.",
+    "category": "Productivity"
+  }
+}

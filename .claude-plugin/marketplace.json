@@ -1,0 +1,17 @@
+{
+  "name": "dev-health",
+  "owner": {
+    "name": "Full Chaos",
+    "url": "https://github.com/full-chaos"
+  },
+  "description": "Dev Health hosted MCP server for Claude Code.",
+  "plugins": [
+    {
+      "name": "dev-health",
+      "source": "./plugins/dev-health",
+      "description": "Ask engineering delivery questions and inspect cited evidence through the hosted Dev Health MCP server.",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/full-chaos/context-fabric-agents"
+    }
+  ]
+}

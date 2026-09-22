@@ -1,0 +1,19 @@
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "acr-mcp-token",
+      "description": "Dev Health MCP token (the value of ACR_MCP_TOKEN)",
+      "password": true
+    }
+  ],
+  "servers": {
+    "dev-health": {
+      "type": "http",
+      "url": "https://mcp.fullchaos.dev/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:acr-mcp-token}"
+      }
+    }
+  }
+}

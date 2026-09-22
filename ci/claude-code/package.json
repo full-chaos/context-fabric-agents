@@ -1,0 +1,9 @@
+{
+  "name": "context-fabric-agents-claude-code-pin",
+  "private": true,
+  "description": "Pins the Claude Code CLI version used by CI (plugin validation and live proof). A new version is a reviewed PR.",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "2.1.278"
+  }
+}

@@ -12,6 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CODEX_VERSION: 0.155.1
   ACTIONLINT_VERSION: v1.7.12
   GITLEAKS_VERSION: v8.30.1
 
@@ -49,6 +50,73 @@ jobs:
           go-version-file: go.mod
       - name: go test (includes the secret and path guard)
         run: go test -count=1 ./...
+
+  codex-config:
+    name: codex-config
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Codex CLI
+        run: |
+          npm install --no-audit --no-fund --prefix "$HOME/codex-cli" "@openai/codex@${CODEX_VERSION}"
+          echo "$HOME/codex-cli/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Codex loads the configs, installs the plugin, rejects planted defects
+        run: bash codex/proof/static_check.sh
+
+  opencode-schema:
+    name: opencode-schema
+    # CHAOS-6203. Live check: validates the OpenCode v1 configs against the
+    # vendor's own published schema (fetched fresh every run, never pinned
+    # locally). A schema that cannot be reached is a red note, never a
+    # silent pass — see cmd/opencodeschema and opencode/README.md.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: OpenCode v1 configs match the vendor schema (live, if reachable)
+        id: live
+        run: |
+          set +e
+          go run ./cmd/opencodeschema opencode/configs/opencode.bearer.json opencode/configs/opencode.oauth.json
+          rc=$?
+          set -e
+          if [ "$rc" -eq 2 ]; then
+            echo "::warning::opencode.ai/config.json was unreachable; live OpenCode schema check skipped, not a pass"
+            echo "unreachable=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "unreachable=0" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+      - name: Negative control (an unknown top-level key must fail the OpenCode schema check)
+        if: steps.live.outputs.unreachable == '0'
+        run: |
+          set +e
+          jq '. + {"bogus_top_level_key": true}' opencode/configs/opencode.bearer.json > "$RUNNER_TEMP/bad-opencode.json"
+          go run ./cmd/opencodeschema "$RUNNER_TEMP/bad-opencode.json"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::the schema check accepted a config with an unknown top-level key"
+            exit 1
+          fi
+          if [ "$rc" -eq 2 ]; then
+            echo "::error::negative control could not run: schema became unreachable mid-job"
+            exit 1
+          fi
+          echo "negative control failed as expected (schema check correctly rejected it)"
+      - name: Negative control skipped (schema was unreachable)
+        if: steps.live.outputs.unreachable == '1'
+        run: echo "::warning::negative control skipped because the live schema fetch failed above"
 
   gitleaks:
     name: gitleaks

@@ -1,0 +1,75 @@
+name: codex-live
+
+# CHAOS-6202 live connect proof. Codex (pinned) reads the bearer config variant
+# and connects to the production hosted MCP server through
+# `codex app-server` `mcpServerStatus/list`. No LLM key, no OpenAI login.
+# Negative control first: a wrong bearer must NOT connect. Then the CI
+# credential must connect and list the four tools. Nothing here prints the
+# bearer. Runs on demand and on PRs from this repo that touch the bundle;
+# fork PRs get no secret, so they are skipped.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'codex/**'
+      - '.agents/**'
+      - 'skills/**'
+      - '.github/workflows/codex-live.yml'
+
+permissions: {}
+
+env:
+  CODEX_VERSION: 0.155.1
+
+jobs:
+  codex-live:
+    name: codex-live
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require the CI credential
+        run: |
+          if [ -z "$ACR_MCP_CI_BEARER" ]; then
+            echo "::error::secret ACR_MCP_CI_BEARER is missing"
+            exit 1
+          fi
+          echo "::add-mask::$ACR_MCP_CI_BEARER"
+      - name: Install pinned Codex CLI
+        run: |
+          npm install --no-audit --no-fund --prefix "$HOME/codex-cli" "@openai/codex@${CODEX_VERSION}"
+          echo "$HOME/codex-cli/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Clean CODEX_HOME with the bearer config variant
+        run: |
+          codex --version
+          mkdir -p "$HOME/codex-home"
+          cp codex/configs/config.bearer.toml "$HOME/codex-home/config.toml"
+          echo "CODEX_HOME=$HOME/codex-home" >> "$GITHUB_ENV"
+      - name: codex mcp list and get
+        run: |
+          codex mcp list
+          codex mcp get dev-health
+      - name: Negative control (wrong bearer must not connect)
+        env:
+          ACR_MCP_TOKEN: not-a-real-token
+        run: |
+          if python3 codex/proof/mcp_status.py dev-health --expect-tool investigate_question; then
+            echo "::error::a wrong bearer connected"
+            exit 1
+          fi
+      - name: Connect with the CI credential
+        env:
+          ACR_MCP_TOKEN: ${{ secrets.ACR_MCP_CI_BEARER }}
+        run: |
+          python3 codex/proof/mcp_status.py dev-health \
+            --expect-tool investigate_question \
+            --expect-tool investigation_result \
+            --expect-tool source_evidence \
+            --expect-tool context_for_task
