@@ -19,9 +19,9 @@ Protocol facts below were observed live on 2026-09-21.
 |---|---|---|---|
 | Claude Code | 2.1.278 | 2026-07-28 (`server/discover`) | `plugins/` (planned) |
 | Codex | 0.155.1 | 2025-06-18 (legacy `initialize`) | `codex/` (planned) |
-| OpenCode | v1 and v2 | not yet recorded | `opencode/` (planned) |
-| Cursor | - | not yet recorded | `cursor/` (planned) |
-| VS Code | - | not yet recorded | `vscode/` (planned) |
+| OpenCode | v1 and v2 | not yet recorded (v1 config checked live against the vendor schema in CI) | `opencode/` |
+| Cursor | - | not yet recorded | `cursor/` |
+| VS Code | - | not yet recorded | `vscode/` |
 
 ## Authentication
 

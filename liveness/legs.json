@@ -14,6 +14,21 @@
       "description": "L1 protocol probe against the trial host https://mcp.commanderkeen.dev/mcp",
       "reason": "trial hosts sit behind Cloudflare Access by design; a GitHub runner has no Access service token",
       "issue": "https://linear.app/fullchaos/issue/CHAOS-6222"
+    },
+    {
+      "id": "opencode",
+      "mode": "static-only",
+      "description": "OpenCode v1/v2 configs: strict JSON parse + doc-derived shape checks in every PR (go test ./...); v1 additionally checked live against https://opencode.ai/config.json (job opencode-schema, CHAOS-6203). No client binary parses these in CI."
+    },
+    {
+      "id": "cursor",
+      "mode": "static-only",
+      "description": "Cursor mcp.json: strict JSON parse + doc-derived shape checks in every PR (go test ./...). No client parser in CI (CHAOS-6203)."
+    },
+    {
+      "id": "vscode",
+      "mode": "static-only",
+      "description": "VS Code mcp.json: strict JSON parse + doc-derived shape checks in every PR (go test ./...). No client parser in CI (CHAOS-6203)."
     }
   ]
 }

@@ -44,9 +44,9 @@ The skill source is `skills/dev-health/SKILL.md`. It is copied byte-for-byte to 
 |---|---|
 | Codex 0.155.1 | `codex mcp list --json` / `mcp get` parsed both TOML variants (`streamable_http`, URL, `bearer_token_env_var` present in bearer only). A broken TOML control failed to load. |
 | Claude Code 2.1.278 | `claude mcp add -s project` from each `.add.txt` wrote a `.mcp.json` semantically identical to the matching golden; `claude mcp get` read the bearer golden. |
-| OpenCode v1, v2 | NOT validated by a client parser (binary not available). Shape from docs only. `"oauth": {}` on and `"protocol": "auto"` are doc-derived. |
-| Cursor | NOT validated by a client parser. Shape from docs only. |
-| VS Code | NOT validated by a client parser. The oauth variant carries no `oauth` key; the docs describe OAuth as automatic, but the page read does not state the no-key behaviour outright. |
+| OpenCode v1, v2 | NOT validated by a client parser (binary not available). Shape from docs only. `"oauth": {}` on and `"protocol": "auto"` are doc-derived. v1 files (they carry `$schema`) ARE checked live, every CI run, against the vendor's own JSON Schema `https://opencode.ai/config.json` — see `cmd/opencodeschema`, job `opencode-schema` (CHAOS-6203). v2 declares no `$schema` and has no published schema to check. |
+| Cursor | NOT validated by a client parser. Shape from docs only. Recorded `static-only` in `liveness/legs.json` (CHAOS-6203). |
+| VS Code | NOT validated by a client parser. The oauth variant carries no `oauth` key; the docs describe OAuth as automatic, but the page read does not state the no-key behaviour outright. Recorded `static-only` in `liveness/legs.json` (CHAOS-6203). |
 | `claude plugin validate --strict` | Claude Code 2.1.278: passes for `plugins/dev-health` and the root marketplace (CHAOS-6201); an unknown manifest field fails it. Runs in `.github/workflows/claude-plugin.yml`. |
 
 ## Bans (enforced by tests and by `-check`)
