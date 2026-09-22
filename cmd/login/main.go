@@ -127,7 +127,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "login:", err)
 		return 1
 	}
-	result, err := devicelogin.Write(ctx, target, dir, token.AccessToken)
+	result, err := devicelogin.Write(ctx, target, dir, token.AccessToken, *mcpURL)
 	if err != nil {
 		fmt.Fprintln(stderr, "login: writing the credential failed:", err)
 		return 1
@@ -145,6 +145,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if result.ManualCommand != "" {
 		fmt.Fprintf(stderr, "login: %q not found on PATH; run this yourself:\n\n    %s\n\n", string(target), result.ManualCommand)
+	}
+	if result.Warning != "" {
+		fmt.Fprintf(stderr, "login: WARNING: %s\n", result.Warning)
 	}
 	if result.EnvFile != "" {
 		fmt.Fprintf(stderr, "login: before starting %s, run: source %s\n", target, result.EnvFile)

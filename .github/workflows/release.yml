@@ -172,6 +172,14 @@ jobs:
           name: release-dist
           path: dist
 
+      # actions/upload-artifact zips the artifact and does not guarantee the
+      # executable bit survives the round trip through actions/download-artifact
+      # (GitHub's own docs: "permissions... are not preserved", files land at
+      # 644). Restore it explicitly -- content (and so SHA256SUMS/signatures)
+      # is unaffected by a chmod, only the mode bit changes.
+      - name: Restore the login binaries' executable bit
+        run: chmod +x dist/*.bin
+
       # The repo Actions allow-list is github-owned only, so cosign is fetched
       # from its release and pinned by SHA-256 instead of a third-party action.
       - name: Install cosign v2.6.5 (SHA-256 pinned)

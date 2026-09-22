@@ -232,6 +232,67 @@ func TestBearerConfigsUseTheClientExpansion(t *testing.T) {
 
 // TestSkillSourceIsValidAndCopiedEverywhere: one source, five byte-identical
 // copies, one per bundle.
+func TestRenderCodexWithURL_DefaultURLMatchesCanonicalRender(t *testing.T) {
+	for _, v := range Variants {
+		want, err := Render(Codex, v)
+		if err != nil {
+			t.Fatalf("Render(Codex, %s): %v", v, err)
+		}
+		got, err := RenderCodexWithURL(v, RemoteURL)
+		if err != nil {
+			t.Fatalf("RenderCodexWithURL(%s, RemoteURL): %v", v, err)
+		}
+		if got != want {
+			t.Errorf("RenderCodexWithURL(%s, RemoteURL) diverges from Render(Codex, %s):\n%s\nvs\n%s", v, v, got, want)
+		}
+	}
+}
+
+func TestRenderCodexWithURL_CustomURL(t *testing.T) {
+	const custom = "https://mcp.example.internal/mcp"
+	for _, v := range Variants {
+		got, err := RenderCodexWithURL(v, custom)
+		if err != nil {
+			t.Fatalf("RenderCodexWithURL(%s, custom): %v", v, err)
+		}
+		if !strings.Contains(got, custom) {
+			t.Errorf("RenderCodexWithURL(%s, custom) does not contain %q:\n%s", v, custom, got)
+		}
+		if strings.Contains(got, RemoteURL) {
+			t.Errorf("RenderCodexWithURL(%s, custom) still contains the default RemoteURL:\n%s", v, got)
+		}
+	}
+}
+
+func TestRenderCodexWithURL_UnknownVariant(t *testing.T) {
+	if _, err := RenderCodexWithURL("bogus", RemoteURL); err == nil {
+		t.Error("want error for an unknown variant")
+	}
+}
+
+func TestRenderClaudeCodeAddCommandWithURL_DefaultURLMatchesCanonical(t *testing.T) {
+	for _, v := range Variants {
+		want := RenderClaudeCodeAddCommand(v)
+		got := RenderClaudeCodeAddCommandWithURL(v, RemoteURL)
+		if got != want {
+			t.Errorf("RenderClaudeCodeAddCommandWithURL(%s, RemoteURL) diverges:\n%s\nvs\n%s", v, got, want)
+		}
+	}
+}
+
+func TestRenderClaudeCodeAddCommandWithURL_CustomURL(t *testing.T) {
+	const custom = "https://mcp.example.internal/mcp"
+	for _, v := range Variants {
+		got := RenderClaudeCodeAddCommandWithURL(v, custom)
+		if !strings.Contains(got, custom) {
+			t.Errorf("RenderClaudeCodeAddCommandWithURL(%s, custom) does not contain %q: %s", v, custom, got)
+		}
+		if strings.Contains(got, RemoteURL) {
+			t.Errorf("RenderClaudeCodeAddCommandWithURL(%s, custom) still contains the default RemoteURL: %s", v, got)
+		}
+	}
+}
+
 func TestSkillSourceIsValidAndCopiedEverywhere(t *testing.T) {
 	root, arts := loadRepo(t)
 	src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(SkillSource)))

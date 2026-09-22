@@ -404,15 +404,24 @@ func (c *Client) Poll(ctx context.Context, tokenEndpoint, deviceCode, clientID s
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
+	expired := func() bool { return !deadline.IsZero() && time.Now().After(deadline) }
 	attempt := 0
 	for {
-		if !deadline.IsZero() && time.Now().After(deadline) {
+		if expired() {
 			return nil, &APIError{Code: ErrExpiredToken, Description: "device code expired before an approval was observed"}
 		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-time.After(interval):
+		}
+		// Re-check right before sending: the wait above can itself cross
+		// the deadline, and a request sent after expiry would be a real
+		// network call the caller was told would never happen (RFC 8628's
+		// "never polls past expires_in" promise, not just an internal loop
+		// invariant).
+		if expired() {
+			return nil, &APIError{Code: ErrExpiredToken, Description: "device code expired before an approval was observed"}
 		}
 		attempt++
 		if onProgress != nil {

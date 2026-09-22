@@ -3,7 +3,6 @@ package devicelogin
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -44,7 +43,7 @@ func mustMode(t *testing.T, path string) os.FileMode {
 
 func TestWrite_Stdout_NoFile(t *testing.T) {
 	dir := t.TempDir()
-	result, err := Write(context.Background(), TargetStdout, dir, "test_token_secret")
+	result, err := Write(context.Background(), TargetStdout, dir, "test_token_secret", render.RemoteURL)
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -66,7 +65,7 @@ func TestWrite_Env(t *testing.T) {
 	// (MkdirAll on an ALREADY-existing dir -- like a bare t.TempDir() --
 	// would not exercise the 0700 permission it sets on creation).
 	dir := filepath.Join(t.TempDir(), "context-fabric-agents", "login")
-	result, err := Write(context.Background(), TargetEnv, dir, "test_token_secret_value")
+	result, err := Write(context.Background(), TargetEnv, dir, "test_token_secret_value", render.RemoteURL)
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -104,7 +103,7 @@ func TestWrite_Env_RefusesSymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Write(context.Background(), TargetEnv, dir, "test_token_secret"); err == nil {
+	if _, err := Write(context.Background(), TargetEnv, dir, "test_token_secret", render.RemoteURL); err == nil {
 		t.Fatal("want an error when the env file path is a symlink")
 	}
 	if got := readFile(t, target); got != "not a token" {
@@ -117,7 +116,7 @@ func TestWrite_Codex_AppendsBlockOnce(t *testing.T) {
 	codexHome := t.TempDir()
 	t.Setenv("CODEX_HOME", codexHome)
 
-	result, err := Write(context.Background(), TargetCodex, dir, "test_token_codex_token")
+	result, err := Write(context.Background(), TargetCodex, dir, "test_token_codex_token", render.RemoteURL)
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -137,7 +136,7 @@ func TestWrite_Codex_AppendsBlockOnce(t *testing.T) {
 	}
 
 	// Idempotent: running again must not duplicate the table.
-	if _, err := Write(context.Background(), TargetCodex, dir, "test_token_codex_token_2"); err != nil {
+	if _, err := Write(context.Background(), TargetCodex, dir, "test_token_codex_token_2", render.RemoteURL); err != nil {
 		t.Fatalf("second Write: %v", err)
 	}
 	second := readFile(t, configPath)
@@ -160,7 +159,7 @@ func TestWrite_Codex_PreservesExistingConfig(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(preexisting), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Write(context.Background(), TargetCodex, dir, "test_token_x"); err != nil {
+	if _, err := Write(context.Background(), TargetCodex, dir, "test_token_x", render.RemoteURL); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	got := readFile(t, configPath)
@@ -169,6 +168,26 @@ func TestWrite_Codex_PreservesExistingConfig(t *testing.T) {
 	}
 	if !strings.Contains(got, "[mcp_servers."+render.ServerName+"]") {
 		t.Errorf("mcp_servers table not appended:\n%s", got)
+	}
+}
+
+// TestWrite_Codex_UsesTheGivenMCPURL is cf-6235-r1 finding 3: a non-default
+// --mcp-url (a self-hosted or trial deployment, matching docs/self-hosted.md)
+// must land in the written config, not the compiled-in RemoteURL default.
+func TestWrite_Codex_UsesTheGivenMCPURL(t *testing.T) {
+	const custom = "https://mcp.trial.example.internal/mcp"
+	dir := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	if _, err := Write(context.Background(), TargetCodex, dir, "test_token_x", custom); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	got := readFile(t, filepath.Join(codexHome, "config.toml"))
+	if !strings.Contains(got, custom) {
+		t.Errorf("config.toml does not contain the requested --mcp-url %q:\n%s", custom, got)
+	}
+	if strings.Contains(got, render.RemoteURL) {
+		t.Errorf("config.toml contains the compiled-in default RemoteURL instead of the requested --mcp-url:\n%s", got)
 	}
 }
 
@@ -181,27 +200,72 @@ func TestWrite_Codex_LeavesAManuallyEditedTableAlone(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(handEdited), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Write(context.Background(), TargetCodex, dir, "test_token_x"); err != nil {
+	result, err := Write(context.Background(), TargetCodex, dir, "test_token_x", render.RemoteURL)
+	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	got := readFile(t, configPath)
 	if got != handEdited {
 		t.Errorf("a pre-existing mcp_servers table must be left untouched, got:\n%s", got)
 	}
+	if result.EnvFile == "" {
+		t.Error("want the token saved to the env file regardless")
+	}
+	if result.ConfigWritten != "" {
+		t.Errorf("ConfigWritten = %q, want empty -- nothing was actually wired for bearer use", result.ConfigWritten)
+	}
+	if result.Warning == "" {
+		t.Fatal("want a Warning: an existing non-bearer table must not be silently reported as wired")
+	}
+	if !strings.Contains(result.Warning, "bearer_token_env_var") {
+		t.Errorf("Warning = %q, want it to name the missing bearer_token_env_var key", result.Warning)
+	}
+}
+
+// TestWrite_Codex_ExistingOAuthTableIsNotReportedAsWired is the reviewer's
+// own scenario from cf-6235-r1 finding 1: the STANDARD rendered OAuth table
+// (byte-identical to what codex/configs/config.oauth.toml ships, not a
+// synthetic one) must not be reported as "wired" for the bearer token that
+// was just saved.
+func TestWrite_Codex_ExistingOAuthTableIsNotReportedAsWired(t *testing.T) {
+	dir := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	oauthBlock, err := render.Render(render.Codex, render.OAuth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(codexHome, "config.toml")
+	if err := os.WriteFile(configPath, []byte(oauthBlock), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Write(context.Background(), TargetCodex, dir, "test_token_x", render.RemoteURL)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if result.ConfigWritten != "" {
+		t.Errorf("ConfigWritten = %q, want empty -- the OAuth table was left OAuth-only", result.ConfigWritten)
+	}
+	if result.Warning == "" {
+		t.Fatal("want a Warning when an existing OAuth table means the saved token is not actually wired to anything")
+	}
+	if got := readFile(t, configPath); got != oauthBlock {
+		t.Errorf("the OAuth table must be left byte-identical, got:\n%s", got)
+	}
 }
 
 func TestClaudeMCPAddCommand_NeverContainsALiteralToken(t *testing.T) {
-	cmd := claudeMCPAddCommand()
+	cmd := claudeMCPAddCommand(render.RemoteURL)
 	want := "claude mcp add --transport http dev-health https://mcp.fullchaos.dev/mcp --header 'Authorization: Bearer ${ACR_MCP_TOKEN}'"
 	if cmd != want {
-		t.Errorf("claudeMCPAddCommand() = %q, want %q", cmd, want)
+		t.Errorf("claudeMCPAddCommand(render.RemoteURL) = %q, want %q", cmd, want)
 	}
 }
 
 func TestWrite_ClaudeCode_FallsBackToManualCommandWhenCLIMissing(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PATH", dir) // a directory with no `claude` binary
-	result, err := Write(context.Background(), TargetClaudeCode, dir, "test_token_cc_token")
+	result, err := Write(context.Background(), TargetClaudeCode, dir, "test_token_cc_token", render.RemoteURL)
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -236,7 +300,7 @@ func TestWrite_ClaudeCode_InvokesCLIWhenPresent(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBinDir)
 
-	result, err := Write(context.Background(), TargetClaudeCode, dir, "test_token_cc_token")
+	result, err := Write(context.Background(), TargetClaudeCode, dir, "test_token_cc_token", render.RemoteURL)
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -255,11 +319,31 @@ func TestWrite_ClaudeCode_InvokesCLIWhenPresent(t *testing.T) {
 	}
 }
 
-// Sanity check that exec.LookPath's ErrNotFound is really what an absent
-// binary produces on this platform, since the fallback path depends on it.
-func TestExecLookPath_ErrNotFoundSanity(t *testing.T) {
-	_, err := exec.LookPath("a-binary-that-should-never-exist-xyz")
-	if err == nil {
-		t.Skip("unexpectedly found a binary named a-binary-that-should-never-exist-xyz")
+// TestWrite_ClaudeCode_UsesTheGivenMCPURL is cf-6235-r1 finding 3 for the
+// Claude Code writer: a non-default --mcp-url must reach `claude mcp add`,
+// not the compiled-in RemoteURL default.
+func TestWrite_ClaudeCode_UsesTheGivenMCPURL(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fake binary is unix-only")
+	}
+	const custom = "https://mcp.trial.example.internal/mcp"
+	dir := t.TempDir()
+	fakeBinDir := t.TempDir()
+	recorded := filepath.Join(fakeBinDir, "claude.args")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" > " + recorded + "\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(fakeBinDir, "claude"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBinDir)
+
+	if _, err := Write(context.Background(), TargetClaudeCode, dir, "test_token_x", custom); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	args := readFile(t, recorded)
+	if !strings.Contains(args, custom) {
+		t.Errorf("claude mcp add args = %q, want the requested --mcp-url %q", args, custom)
+	}
+	if strings.Contains(args, render.RemoteURL) {
+		t.Errorf("claude mcp add args = %q, contains the compiled-in default instead of --mcp-url", args)
 	}
 }

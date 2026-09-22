@@ -377,6 +377,26 @@ func TestPoll_NeverPollsPastDeadline(t *testing.T) {
 	}
 }
 
+// TestPoll_NeverSendsARequestAfterDeadlineEvenWhenIntervalOverruns is
+// cf-6235-r1 finding 2: when interval alone is longer than the remaining
+// time to deadline, the ORIGINAL code checked the deadline only before
+// waiting, then sent a real request after waking up -- by then already past
+// expiry. Assert zero requests ever reach the server once the interval
+// overruns the deadline, not just that Poll eventually returns expired.
+func TestPoll_NeverSendsARequestAfterDeadlineEvenWhenIntervalOverruns(t *testing.T) {
+	f := newFakeAS(t)
+	f.tokenSequence = []func(http.ResponseWriter, *http.Request){tokenSuccess("should-never-be-requested")}
+	deadline := time.Now().Add(20 * time.Millisecond)
+	_, err := f.client().Poll(context.Background(), f.as.URL+"/token", f.deviceCode, f.registerClientID, 100*time.Millisecond, deadline, nil)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != ErrExpiredToken {
+		t.Fatalf("err = %v, want APIError{Code: expired_token}", err)
+	}
+	if calls := f.tokenCalls.Load(); calls != 0 {
+		t.Errorf("/token was called %d time(s); an interval longer than the remaining deadline must never send a request at all", calls)
+	}
+}
+
 func TestPoll_RespectsContextCancellation(t *testing.T) {
 	f := newFakeAS(t)
 	f.tokenSequence = []func(http.ResponseWriter, *http.Request){tokenPending}

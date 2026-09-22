@@ -16,8 +16,9 @@ in this repo does, from the target MCP URL's own `401` challenge.
 
 Download the binary for your OS/arch from a
 [release](https://github.com/full-chaos/context-fabric-agents/releases) (see
-[verify-release.md](verify-release.md) to check the signature), or run it
-from a checkout:
+[verify-release.md](verify-release.md) to check the signature), mark it
+executable (`chmod +x context-fabric-agents-login-*`), or run it from a
+checkout:
 
 ```bash
 go run ./cmd/login --client codex

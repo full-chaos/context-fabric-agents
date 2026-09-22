@@ -60,6 +60,14 @@ type WriteResult struct {
 	// and renderCodexBearerBlock: both name the token only by the
 	// ACR_MCP_TOKEN environment-variable expansion, never a value).
 	ManualCommand string
+	// Warning is set when the token was saved (EnvFile is always populated
+	// on the same call) but the client's own config was NOT wired to use
+	// it -- e.g. an existing mcp_servers.dev-health table in Codex's
+	// config.toml that is not the bearer shape (an OAuth table, or one
+	// hand-edited without bearer_token_env_var). Write never overwrites an
+	// existing table of any shape, so this is the caller's signal that
+	// "token saved" does not mean "client wired" this time.
+	Warning string
 }
 
 // EnvFilePath returns the 0600 env file Write uses for target, under dir
@@ -109,8 +117,11 @@ func writeEnvFile(path, token string) error {
 
 // Write wires token into the target client's config and returns what it
 // did. dir is the directory env files are written under (StateDir() for
-// the real CLI; a temp dir in tests).
-func Write(ctx context.Context, target TargetClient, dir, token string) (*WriteResult, error) {
+// the real CLI; a temp dir in tests). mcpURL is the hosted MCP endpoint the
+// caller signed in against (--mcp-url); it is written into the client
+// config exactly as given, so a non-default (self-hosted/trial) endpoint is
+// what the client actually connects to, not the compiled-in default.
+func Write(ctx context.Context, target TargetClient, dir, token, mcpURL string) (*WriteResult, error) {
 	switch target {
 	case TargetStdout:
 		return &WriteResult{}, nil
@@ -125,25 +136,34 @@ func Write(ctx context.Context, target TargetClient, dir, token string) (*WriteR
 		if err := writeEnvFile(path, token); err != nil {
 			return nil, err
 		}
-		configPath, err := writeCodexConfig()
+		configPath, warning, err := writeCodexConfig(mcpURL)
 		if err != nil {
 			return nil, err
 		}
-		return &WriteResult{EnvFile: path, ConfigWritten: configPath}, nil
+		// ConfigWritten means "the client is wired to use this token" --
+		// when writeCodexConfig left an existing non-bearer table alone, it
+		// still names the path (for the warning's own wording) but nothing
+		// was actually wired, so ConfigWritten must stay empty here or the
+		// caller prints a contradictory "wired ... / WARNING: not wired".
+		result := &WriteResult{EnvFile: path, Warning: warning}
+		if warning == "" {
+			result.ConfigWritten = configPath
+		}
+		return result, nil
 	case TargetClaudeCode:
 		path := EnvFilePath(dir, target)
 		if err := writeEnvFile(path, token); err != nil {
 			return nil, err
 		}
 		result := &WriteResult{EnvFile: path}
-		if err := runClaudeMCPAdd(ctx); err != nil {
+		if err := runClaudeMCPAdd(ctx, mcpURL); err != nil {
 			if !errors.Is(err, exec.ErrNotFound) {
 				return nil, fmt.Errorf("claude mcp add: %w", err)
 			}
-			result.ManualCommand = claudeMCPAddCommand()
+			result.ManualCommand = claudeMCPAddCommand(mcpURL)
 			return result, nil
 		}
-		result.ConfigWritten = claudeMCPAddCommand()
+		result.ConfigWritten = claudeMCPAddCommand(mcpURL)
 		return result, nil
 	default:
 		return nil, fmt.Errorf("unknown target client %q", target)
@@ -165,61 +185,83 @@ func codexHome() (string, error) {
 
 const codexBlockMarker = "[mcp_servers." // shared prefix; the exact table name is render.ServerName
 
-// writeCodexConfig appends the rendered Codex bearer block to
-// ~/.codex/config.toml if a dev-health mcp_servers table is not already
-// there. It never rewrites an existing table (the user may have edited it)
-// and never touches the file at all when the table is already present.
-func writeCodexConfig() (string, error) {
+// codexBearerMarker is a line that appears in config.toml if and only if a
+// dev-health mcp_servers table of the BEARER shape is already there
+// (rendered by render.RenderCodexWithURL(Codex, Bearer, ...), which always
+// includes this exact key). A bare codexBlockMarker match is not enough: an
+// existing table of that name could be the OAuth variant (no
+// bearer_token_env_var key at all), which this func must never mistake for
+// "already wired for headless use."
+var codexBearerMarker = fmt.Sprintf("bearer_token_env_var = %q", render.TokenEnvVar)
+
+// writeCodexConfig appends the rendered Codex bearer block (for mcpURL) to
+// ~/.codex/config.toml if a dev-health BEARER mcp_servers table is not
+// already there. It never rewrites an existing table (the user may have
+// edited it) and never touches the file when a bearer table is already
+// present. If a dev-health table exists but is NOT the bearer shape (e.g.
+// the OAuth default, or a hand-edited table), appending would create an
+// invalid duplicate TOML section -- so it leaves the file untouched and
+// returns a warning instead of silently claiming the client is wired for
+// the token it just saved.
+func writeCodexConfig(mcpURL string) (path string, warning string, err error) {
 	home, err := codexHome()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	path := filepath.Join(home, "config.toml")
+	path = filepath.Join(home, "config.toml")
 	existing, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("read %s: %w", path, err)
+		return "", "", fmt.Errorf("read %s: %w", path, err)
 	}
-	marker := codexBlockMarker + render.ServerName + "]"
-	if bytes.Contains(existing, []byte(marker)) {
-		return path, nil // already wired; nothing to do
+	if bytes.Contains(existing, []byte(codexBearerMarker)) {
+		return path, "", nil // already wired for bearer; nothing to do
 	}
-	block, err := render.Render(render.Codex, render.Bearer)
+	tableMarker := codexBlockMarker + render.ServerName + "]"
+	if bytes.Contains(existing, []byte(tableMarker)) {
+		return path, fmt.Sprintf(
+			"an existing [mcp_servers.%s] table in %s does not use a bearer token (likely the OAuth default) -- "+
+				"the ACR_MCP_TOKEN env file was still written, but %s was left untouched to avoid a duplicate table; "+
+				"add %q under that table by hand, or remove it and rerun",
+			render.ServerName, path, path, codexBearerMarker), nil
+	}
+	block, err := render.RenderCodexWithURL(render.Bearer, mcpURL)
 	if err != nil {
-		return "", fmt.Errorf("render codex bearer config: %w", err)
+		return "", "", fmt.Errorf("render codex bearer config: %w", err)
 	}
 	if err := os.MkdirAll(home, 0o700); err != nil {
-		return "", fmt.Errorf("create %s: %w", home, err)
+		return "", "", fmt.Errorf("create %s: %w", home, err)
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
-		return "", fmt.Errorf("open %s: %w", path, err)
+		return "", "", fmt.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close()
 	if len(existing) > 0 && !bytes.HasSuffix(existing, []byte("\n")) {
 		if _, err := f.WriteString("\n"); err != nil {
-			return "", fmt.Errorf("write %s: %w", path, err)
+			return "", "", fmt.Errorf("write %s: %w", path, err)
 		}
 	}
 	if _, err := f.WriteString("\n" + block); err != nil {
-		return "", fmt.Errorf("write %s: %w", path, err)
+		return "", "", fmt.Errorf("write %s: %w", path, err)
 	}
-	return path, f.Close()
+	return path, "", f.Close()
 }
 
-// claudeMCPAddCommand is the exact `claude mcp add` invocation, argument by
-// argument, matching render.RenderClaudeCodeAddCommand's bearer variant.
-// The header value names ACR_MCP_TOKEN by reference only -- Claude Code
-// expands it at connect time, so the literal token never appears in this
-// command, in Claude Code's own config, or in this program's output.
-func claudeMCPAddArgs() []string {
+// claudeMCPAddArgs is the exact `claude mcp add` invocation, argument by
+// argument, matching render.RenderClaudeCodeAddCommandWithURL's bearer
+// variant for mcpURL. The header value names ACR_MCP_TOKEN by reference
+// only -- Claude Code expands it at connect time, so the literal token
+// never appears in this command, in Claude Code's own config, or in this
+// program's output.
+func claudeMCPAddArgs(mcpURL string) []string {
 	return []string{
-		"mcp", "add", "--transport", "http", render.ServerName, render.RemoteURL,
+		"mcp", "add", "--transport", "http", render.ServerName, mcpURL,
 		"--header", fmt.Sprintf("Authorization: Bearer ${%s}", render.TokenEnvVar),
 	}
 }
 
-func claudeMCPAddCommand() string {
-	args := claudeMCPAddArgs()
+func claudeMCPAddCommand(mcpURL string) string {
+	args := claudeMCPAddArgs(mcpURL)
 	quoted := make([]string, len(args))
 	for i, a := range args {
 		if strings.ContainsAny(a, " ${}") {
@@ -231,12 +273,12 @@ func claudeMCPAddCommand() string {
 	return "claude " + strings.Join(quoted, " ")
 }
 
-func runClaudeMCPAdd(ctx context.Context) error {
+func runClaudeMCPAdd(ctx context.Context, mcpURL string) error {
 	bin, err := exec.LookPath("claude")
 	if err != nil {
 		return exec.ErrNotFound
 	}
-	cmd := exec.CommandContext(ctx, bin, claudeMCPAddArgs()...)
+	cmd := exec.CommandContext(ctx, bin, claudeMCPAddArgs(mcpURL)...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	out, err := cmd.CombinedOutput()
