@@ -372,6 +372,19 @@ func (c *Client) StartDeviceAuthorization(ctx context.Context, endpoint, clientI
 	if out.DeviceCode == "" || out.UserCode == "" || out.VerificationURI == "" {
 		return nil, errors.New("device_authorization response is missing device_code, user_code, or verification_uri")
 	}
+	// Every URL this package accepts from the network goes through
+	// requireSecure at the point it is accepted, not just the ones fetched
+	// during discovery -- verification_uri/verification_uri_complete are
+	// PRINTED for the user to open in a browser, and an http one would
+	// carry the device's user_code over cleartext (cf-6235-r3 finding 2).
+	if _, err := requireSecure(out.VerificationURI, "verification_uri", c.InsecureLoopback); err != nil {
+		return nil, err
+	}
+	if out.VerificationURIComplete != "" {
+		if _, err := requireSecure(out.VerificationURIComplete, "verification_uri_complete", c.InsecureLoopback); err != nil {
+			return nil, err
+		}
+	}
 	interval := time.Duration(out.Interval) * time.Second
 	if interval <= 0 {
 		interval = 5 * time.Second

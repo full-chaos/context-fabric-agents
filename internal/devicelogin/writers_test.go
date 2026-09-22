@@ -74,7 +74,7 @@ func TestWrite_Env(t *testing.T) {
 		t.Fatal("want EnvFile set")
 	}
 	content := readFile(t, result.EnvFile)
-	want := "export ACR_MCP_TOKEN=test_token_secret_value\n"
+	want := "export ACR_MCP_TOKEN='test_token_secret_value'\n"
 	if content != want {
 		t.Errorf("env file content = %q, want %q", content, want)
 	}
@@ -146,7 +146,7 @@ func TestWrite_Codex_AppendsBlockOnce(t *testing.T) {
 	}
 
 	envContent := readFile(t, EnvFilePath(dir, TargetCodex))
-	if envContent != "export ACR_MCP_TOKEN=test_token_codex_token_2\n" {
+	if envContent != "export ACR_MCP_TOKEN='test_token_codex_token_2'\n" {
 		t.Errorf("env file not updated on the second run: %q", envContent)
 	}
 }
@@ -251,8 +251,8 @@ func TestWrite_Codex_LeavesAManuallyEditedTableAlone(t *testing.T) {
 	if result.Warning == "" {
 		t.Fatal("want a Warning: an existing non-bearer table must not be silently reported as wired")
 	}
-	if !strings.Contains(result.Warning, "bearer_token_env_var") {
-		t.Errorf("Warning = %q, want it to name the missing bearer_token_env_var key", result.Warning)
+	if !strings.Contains(result.Warning, "bearer") {
+		t.Errorf("Warning = %q, want it to explain the table is not bearer-shaped", result.Warning)
 	}
 }
 
@@ -322,6 +322,87 @@ func TestShellQuote_RoundTripsThroughARealShell(t *testing.T) {
 	}
 }
 
+// TestAdversarialValueThroughEverySink is the structural fix for the
+// cf-6235-r1/r2/r3 shell-injection class: the SAME set of adversarial
+// values is fed through EVERY sink this package writes an
+// externally-supplied string (a token, or an mcp-url) into, and every one
+// is proven safe -- not just the site a particular round happened to find.
+// Sinks: (1) the env file's `export` line (shell-interpreted on `source`),
+// (2) the printed/executed `claude mcp add` command (shell-interpreted if
+// pasted), (3) the printed `source <path>` hint (shell-interpreted), (4)
+// the codex config.toml `url = "..."` line (TOML-string-interpreted, not
+// shell -- proven by decoding it back out, not by running a shell).
+func TestAdversarialValueThroughEverySink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix shell quoting only")
+	}
+	adversarial := []string{
+		`abc';touch /tmp/should-never-run-` + t.Name() + `;'`,
+		"abc`touch /tmp/should-never-run-backtick`",
+		"has spaces and $ENV and ${braces} and \"double quotes\"",
+		`it's got an apostrophe`,
+		"trailing backslash\\",
+	}
+	runShell := func(t *testing.T, quoted string) string {
+		t.Helper()
+		out, err := exec.Command("sh", "-c", "printf '%s' "+quoted).Output()
+		if err != nil {
+			t.Fatalf("sh -c printf %s: %v", quoted, err)
+		}
+		return string(out)
+	}
+
+	for _, v := range adversarial {
+		t.Run("env_file/"+v, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := writeEnvFile(EnvFilePath(dir, TargetEnv), v); err != nil {
+				t.Fatalf("writeEnvFile: %v", err)
+			}
+			content := readFile(t, EnvFilePath(dir, TargetEnv))
+			// The file is exactly one `export NAME=<quoted>\n` line; source
+			// it for real and check the shell reconstructs v.
+			out, err := exec.Command("sh", "-c", content+"printf '%s' \"$"+render.TokenEnvVar+"\"").Output()
+			if err != nil {
+				t.Fatalf("sourcing the env file: %v (content: %q)", err, content)
+			}
+			if got := string(out); got != v {
+				t.Errorf("env file round-trip: sh saw %q, want %q (file content: %q)", got, v, content)
+			}
+		})
+		t.Run("claude_command/"+v, func(t *testing.T) {
+			cmd := claudeMCPAddCommand(v)
+			// Run the ACTUAL printed command through a real shell, with
+			// `claude` replaced by a function that prints its 6th
+			// argument (`mcp add --transport http dev-health <url> ...`)
+			// -- this parses cmd's quoting the way a user pasting it
+			// would, rather than re-parsing the quoted text ourselves.
+			script := `claude() { printf '%s' "$6"; }; ` + cmd
+			out, err := exec.Command("sh", "-c", script).Output()
+			if err != nil {
+				t.Fatalf("sh -c %q: %v", script, err)
+			}
+			if got := string(out); got != v {
+				t.Errorf("claude command round-trip: got %q, want %q (command: %s)", got, v, cmd)
+			}
+		})
+		t.Run("source_hint/"+v, func(t *testing.T) {
+			got := runShell(t, ShellQuote(v))
+			if got != v {
+				t.Errorf("source-hint quoting round-trip: sh saw %q, want %q", got, v)
+			}
+		})
+		t.Run("codex_config_url/"+v, func(t *testing.T) {
+			block, err := render.RenderCodexWithURL(render.Bearer, v)
+			if err != nil {
+				t.Fatalf("RenderCodexWithURL: %v", err)
+			}
+			if got := codexTableURL([]byte(block)); got != v {
+				t.Errorf("codex config url round-trip: decoded %q, want %q (block: %s)", got, v, block)
+			}
+		})
+	}
+}
+
 func TestWrite_ClaudeCode_FallsBackToManualCommandWhenCLIMissing(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PATH", dir) // a directory with no `claude` binary
@@ -341,7 +422,7 @@ func TestWrite_ClaudeCode_FallsBackToManualCommandWhenCLIMissing(t *testing.T) {
 	if result.EnvFile == "" {
 		t.Fatal("want the env file written even in the fallback path")
 	}
-	if got := readFile(t, result.EnvFile); got != "export ACR_MCP_TOKEN=test_token_cc_token\n" {
+	if got := readFile(t, result.EnvFile); got != "export ACR_MCP_TOKEN='test_token_cc_token'\n" {
 		t.Errorf("env file content = %q", got)
 	}
 }
@@ -415,6 +496,56 @@ func TestWrite_ClaudeCode_CLIPresentButFailsFallsBackGracefully(t *testing.T) {
 	}
 	if result.Warning == "" {
 		t.Error("want a Warning distinguishing this from the CLI-missing case")
+	}
+}
+
+// TestWrite_Codex_ExistingBearerTableForADifferentURLIsNotReportedAsWired
+// is cf-6235-r3 finding 3: an existing bearer-shaped table wired for one
+// --mcp-url (e.g. prod) must not be reported as "wired" when this run
+// targets a DIFFERENT one (e.g. trial) -- the marker alone is not enough;
+// the url must match too.
+func TestWrite_Codex_ExistingBearerTableForADifferentURLIsNotReportedAsWired(t *testing.T) {
+	const oldURL = "https://mcp.fullchaos.dev/mcp"
+	const newURL = "https://mcp.trial.example/mcp"
+	dir := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	oldBlock, err := render.RenderCodexWithURL(render.Bearer, oldURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(codexHome, "config.toml")
+	if err := os.WriteFile(configPath, []byte(oldBlock), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Write(context.Background(), TargetCodex, dir, "test_token_x", newURL)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if got := readFile(t, configPath); got != oldBlock {
+		t.Errorf("the existing (old-URL) table must be left byte-identical, got:\n%s", got)
+	}
+	if result.ConfigWritten != "" {
+		t.Errorf("ConfigWritten = %q, want empty -- the config still points at %q, not %q", result.ConfigWritten, oldURL, newURL)
+	}
+	if result.Warning == "" {
+		t.Fatal("want a Warning: an existing table for a DIFFERENT url must not be silently reported as wired for this one")
+	}
+	if !strings.Contains(result.Warning, oldURL) || !strings.Contains(result.Warning, newURL) {
+		t.Errorf("Warning = %q, want it to name both the existing url %q and the requested one %q", result.Warning, oldURL, newURL)
+	}
+}
+
+func TestCodexTableURL(t *testing.T) {
+	block, err := render.RenderCodexWithURL(render.Bearer, "https://mcp.example.test/mcp?a=b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := codexTableURL([]byte(block)); got != "https://mcp.example.test/mcp?a=b" {
+		t.Errorf("codexTableURL = %q, want the rendered url", got)
+	}
+	if got := codexTableURL([]byte("[mcp_servers.dev-health]\nenabled = true\n")); got != "" {
+		t.Errorf("codexTableURL with no url line = %q, want empty", got)
 	}
 }
 

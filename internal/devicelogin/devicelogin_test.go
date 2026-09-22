@@ -362,6 +362,147 @@ func TestDiscover_RefusesHTTPDeviceAuthorizationEndpoint(t *testing.T) {
 	}
 }
 
+// schemeChainCfg is the mutable set of URLs a schemeChain's handlers serve.
+// A test overrides exactly one field to downgrade exactly one role in the
+// discovery chain, keeping everything else https.
+type schemeChainCfg struct {
+	resourceMetadataURL     string
+	resource                string
+	authServers             []string
+	deviceAuthEndpoint      string
+	tokenEndpoint           string
+	registrationEndpoint    string
+	verificationURI         string
+	verificationURIComplete string
+}
+
+// schemeChain is a full fake MCP+AS pair (both https) whose every
+// discovered URL is individually overridable via cfg, for
+// TestAllDiscoveredURLsRequireHTTPS: the single point-of-acceptance table
+// test cf-6235-r3 asked for, covering every URL role at once instead of
+// one bespoke test per role.
+type schemeChain struct {
+	mcp *httptest.Server
+	as  *httptest.Server
+	cfg *schemeChainCfg
+}
+
+func newSchemeChain(t *testing.T) *schemeChain {
+	t.Helper()
+	mux := http.NewServeMux()
+	asMux := http.NewServeMux()
+	mcpSrv := httptest.NewTLSServer(mux)
+	t.Cleanup(mcpSrv.Close)
+	asSrv := httptest.NewTLSServer(asMux)
+	t.Cleanup(asSrv.Close)
+
+	cfg := &schemeChainCfg{
+		resourceMetadataURL:     mcpSrv.URL + "/.well-known/oauth-protected-resource/mcp",
+		resource:                mcpSrv.URL + "/mcp",
+		authServers:             []string{asSrv.URL},
+		deviceAuthEndpoint:      asSrv.URL + "/device_authorization",
+		tokenEndpoint:           asSrv.URL + "/token",
+		registrationEndpoint:    asSrv.URL + "/register",
+		verificationURI:         asSrv.URL + "/activate",
+		verificationURIComplete: asSrv.URL + "/activate?user_code=ABCD",
+	}
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf("Bearer resource_metadata=%q", cfg.resourceMetadataURL))
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"resource": cfg.resource, "authorization_servers": cfg.authServers})
+	})
+	asMux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{
+			"issuer": asSrv.URL, "device_authorization_endpoint": cfg.deviceAuthEndpoint,
+			"token_endpoint": cfg.tokenEndpoint, "registration_endpoint": cfg.registrationEndpoint,
+		})
+	})
+	asMux.HandleFunc("/device_authorization", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{
+			"device_code": "dc123", "user_code": "ABCD-EFGH",
+			"verification_uri": cfg.verificationURI, "verification_uri_complete": cfg.verificationURIComplete,
+			"expires_in": 600, "interval": 1,
+		})
+	})
+	return &schemeChain{mcp: mcpSrv, as: asSrv, cfg: cfg}
+}
+
+func (s *schemeChain) client() *Client {
+	pool := x509.NewCertPool()
+	pool.AddCert(s.mcp.Certificate())
+	pool.AddCert(s.as.Certificate())
+	return &Client{HTTPClient: &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}}
+}
+
+// TestAllDiscoveredURLsRequireHTTPS is the single table test cf-6235-r3
+// asked for: every URL this package accepts from the network -- not just
+// the ones an earlier round happened to find missing a check -- must be
+// validated at the point it is accepted. Each case downgrades exactly one
+// role to a syntactically-valid, unreachable http URL and expects Discover
+// (or StartDeviceAuthorization, for the two roles it validates) to refuse,
+// naming that role.
+func TestAllDiscoveredURLsRequireHTTPS(t *testing.T) {
+	const downgrade = "http://insecure.invalid/x"
+
+	discoverCases := []struct {
+		name   string
+		mutate func(*schemeChainCfg)
+		want   string
+	}{
+		{"resource_metadata", func(c *schemeChainCfg) { c.resourceMetadataURL = downgrade }, "resource_metadata"},
+		{"issuer", func(c *schemeChainCfg) { c.authServers = []string{downgrade} }, "authorization_servers"},
+		{"device_authorization_endpoint", func(c *schemeChainCfg) { c.deviceAuthEndpoint = downgrade }, "device_authorization_endpoint"},
+		{"token_endpoint", func(c *schemeChainCfg) { c.tokenEndpoint = downgrade }, "token_endpoint"},
+		{"registration_endpoint", func(c *schemeChainCfg) { c.registrationEndpoint = downgrade }, "registration_endpoint"},
+	}
+	for _, tc := range discoverCases {
+		t.Run(tc.name, func(t *testing.T) {
+			chain := newSchemeChain(t)
+			tc.mutate(chain.cfg)
+			_, err := chain.client().Discover(context.Background(), chain.mcp.URL+"/mcp")
+			if err == nil {
+				t.Fatal("want an error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want it to name %q", err, tc.want)
+			}
+		})
+	}
+
+	// verification_uri and verification_uri_complete arrive in the
+	// device_authorization RESPONSE, so they're validated by
+	// StartDeviceAuthorization, only reachable once Discover has already
+	// succeeded (everything else stays https for these two cases).
+	pollCases := []struct {
+		name   string
+		mutate func(*schemeChainCfg)
+		want   string
+	}{
+		{"verification_uri", func(c *schemeChainCfg) { c.verificationURI = downgrade }, "verification_uri"},
+		{"verification_uri_complete", func(c *schemeChainCfg) { c.verificationURIComplete = downgrade }, "verification_uri_complete"},
+	}
+	for _, tc := range pollCases {
+		t.Run(tc.name, func(t *testing.T) {
+			chain := newSchemeChain(t)
+			tc.mutate(chain.cfg)
+			client := chain.client()
+			d, err := client.Discover(context.Background(), chain.mcp.URL+"/mcp")
+			if err != nil {
+				t.Fatalf("Discover (chain should still be https except %s): %v", tc.name, err)
+			}
+			_, err = client.StartDeviceAuthorization(context.Background(), d.DeviceAuthorizationEndpoint, "test-client", "", chain.mcp.URL+"/mcp")
+			if err == nil {
+				t.Fatal("want an error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want it to name %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestRegister(t *testing.T) {
 	f := newFakeAS(t)
 	id, err := f.client().Register(context.Background(), f.as.URL+"/register", "test-client-name")

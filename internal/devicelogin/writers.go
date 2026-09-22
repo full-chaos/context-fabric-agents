@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/full-chaos/context-fabric-agents/internal/render"
@@ -100,7 +102,14 @@ func writeEnvFile(path, token string) error {
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("%s is a symlink, refusing to write a credential through it", path)
 	}
-	content := fmt.Sprintf("export %s=%s\n", render.TokenEnvVar, token)
+	// ShellQuote the token, not just interpolate it: the file is `source`d
+	// by a real shell (this package prints exactly that instruction), and
+	// a token value the server returns is not otherwise validated -- a
+	// token containing shell syntax would execute when sourced
+	// (cf-6235-r3 finding 1). Every value this package writes into a
+	// shell-interpreted sink (this env file, the printed claude command,
+	// the printed source hint) goes through the same ShellQuote helper.
+	content := fmt.Sprintf("export %s=%s\n", render.TokenEnvVar, ShellQuote(token))
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
@@ -224,6 +233,28 @@ func codexTableBlock(doc []byte, tableMarker string) []byte {
 	return doc[start:end]
 }
 
+var codexURLLineRe = regexp.MustCompile(`(?m)^\s*url\s*=\s*"((?:[^"\\]|\\.)*)"\s*$`)
+
+// codexTableURL returns the (TOML-basic-string-unquoted) value of a table
+// block's own "url = ..." line, or "" if there is none or it fails to
+// unquote.
+func codexTableURL(block []byte) string {
+	m := codexURLLineRe.FindSubmatch(block)
+	if m == nil {
+		return ""
+	}
+	// TOML basic-string escaping and Go's %q/strconv.Unquote agree closely
+	// enough for a URL (both backslash-escape " and \, and share the
+	// common control-char escapes) -- render.go already writes this line
+	// with %q, so decoding with strconv.Unquote is the exact inverse of
+	// how it was written, not a separate parser to keep in sync.
+	unquoted, err := strconv.Unquote(`"` + string(m[1]) + `"`)
+	if err != nil {
+		return ""
+	}
+	return unquoted
+}
+
 // writeCodexConfig appends the rendered Codex bearer block (for mcpURL) to
 // ~/.codex/config.toml if a dev-health BEARER mcp_servers table is not
 // already there. It never rewrites an existing table (the user may have
@@ -245,14 +276,30 @@ func writeCodexConfig(mcpURL string) (path string, warning string, err error) {
 	}
 	tableMarker := codexBlockMarker + render.ServerName + "]"
 	if block := codexTableBlock(existing, tableMarker); block != nil {
-		if bytes.Contains(block, []byte(codexBearerMarker)) {
-			return path, "", nil // already wired for bearer; nothing to do
+		// "Already wired" compares the FULL expected table -- both the
+		// bearer marker AND the url -- not the marker alone. A table
+		// wired for a DIFFERENT --mcp-url (e.g. prod, when this run
+		// targets trial) has the marker but is not wired for what was
+		// just requested; reporting it as wired would leave the token and
+		// the client's actual endpoint pointing at different deployments
+		// (cf-6235-r3 finding 3).
+		hasBearer := bytes.Contains(block, []byte(codexBearerMarker))
+		existingURL := codexTableURL(block)
+		if hasBearer && existingURL == mcpURL {
+			return path, "", nil // already wired for bearer, for THIS url; nothing to do
+		}
+		var reason string
+		switch {
+		case !hasBearer:
+			reason = "does not use a bearer token (likely the OAuth default)"
+		default: // hasBearer && existingURL != mcpURL
+			reason = fmt.Sprintf("is wired for a different URL (%q, not the requested %q)", existingURL, mcpURL)
 		}
 		return path, fmt.Sprintf(
-			"an existing [mcp_servers.%s] table in %s does not use a bearer token (likely the OAuth default) -- "+
+			"an existing [mcp_servers.%s] table in %s %s -- "+
 				"the ACR_MCP_TOKEN env file was still written, but %s was left untouched to avoid a duplicate table; "+
-				"add %q under that table by hand, or remove it and rerun",
-			render.ServerName, path, path, codexBearerMarker), nil
+				"update or remove that table by hand, then rerun",
+			render.ServerName, path, reason, path), nil
 	}
 	block, err := render.RenderCodexWithURL(render.Bearer, mcpURL)
 	if err != nil {
