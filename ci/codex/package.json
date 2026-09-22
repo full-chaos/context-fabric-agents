@@ -4,6 +4,6 @@
   "description": "Pins the Codex CLI version used by the liveness L2 leg. A new version is a reviewed PR that also updates contracts/acr-mcp/compat.json.",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@openai/codex": "0.155.1"
+    "@openai/codex": "0.0.0-does-not-exist"
   }
 }
