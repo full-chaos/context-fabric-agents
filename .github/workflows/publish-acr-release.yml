@@ -134,6 +134,34 @@ jobs:
             --certificate-oidc-issuer "$ACR_OIDC_ISSUER"
           (cd acr-dist && sha256sum --check SHA256SUMS)
 
+          # Every downloaded file must be EITHER SHA256SUMS/its sigstore bundle
+          # OR a file the (now signature-verified) SHA256SUMS itself lists --
+          # sha256sum --check only proves the listed files are correct, it
+          # says nothing about an EXTRA, unlisted file riding along in the
+          # same download. Assert the file SET matches exactly, both ways.
+          (
+            cd acr-dist
+            { printf '%s\n' SHA256SUMS SHA256SUMS.sigstore.json; awk '{print $2}' SHA256SUMS; } \
+              | LC_ALL=C sort -u > /tmp/expected-assets
+            find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > /tmp/actual-assets
+            if ! cmp -s /tmp/expected-assets /tmp/actual-assets; then
+              echo "::error::acr-dist contains an unlisted or missing asset -- refusing to publish"
+              diff /tmp/expected-assets /tmp/actual-assets || true
+              exit 1
+            fi
+          )
+
+          # Completeness: the whole point of this workflow is the acr-mcp
+          # (and acr-api) binaries; a checksum-clean but incomplete source
+          # set must never publish as if it were the full release.
+          for pattern in 'acr-mcp_*' 'acr-api_*'; do
+            # shellcheck disable=SC2144
+            if ! compgen -G "acr-dist/${pattern}" >/dev/null; then
+              echo "::error::no asset matching ${pattern} in the downloaded acr release -- refusing to publish"
+              exit 1
+            fi
+          done
+
       - name: Publish or update the cfa release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -157,9 +185,17 @@ jobs:
         run: |
           set -euo pipefail
           echo "asset URLs (unauthenticated curl -sIL, expect 200 for each):"
+          bad=0
           for f in acr-dist/*; do
             name="$(basename "$f")"
             url="https://github.com/${{ github.repository }}/releases/download/${CFA_TAG}/${name}"
             code="$(curl -s -o /dev/null -w '%{http_code}' -IL "$url")"
             printf '%s  %s\n' "$code" "$url"
+            if [ "$code" != "200" ]; then
+              bad=$((bad + 1))
+            fi
           done
+          if [ "$bad" -ne 0 ]; then
+            echo "::error::${bad} asset URL(s) did not return 200 anonymously -- the publish is not actually reachable"
+            exit 1
+          fi
