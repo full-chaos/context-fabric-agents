@@ -22,6 +22,14 @@ name: publish-acr-release
 # (github.com/full-chaos/dev-health-acr/.github/workflows/release.yml@refs/
 # {heads/main,tags/vX.Y.Z}), and re-checks every asset's sha256 before
 # republishing anything.
+#
+# acr and cfa version independently -- acr has never cut a matching vX.Y.Z
+# tag with real release assets (only its main-<sha> channel does), so a v*
+# tag push on THIS repo cannot assume an acr tag of the same name exists.
+# contracts/acr-mcp/release.txt pins the acr release this repo mirrors on a
+# tag push; bump it in the same PR that bumps VERSION for a new cfa release.
+# workflow_dispatch keeps the explicit acr_release_tag input for a one-off
+# mirror (e.g. proving the workflow before any pin/tag exists).
 on:
   push:
     tags: ['v*']
@@ -30,9 +38,9 @@ on:
       acr_release_tag:
         description: >-
           acr GitHub Release tag to mirror (e.g. main-<sha> or vX.Y.Z).
-          Required for a manual run; a v* tag push on this repo uses its own
-          tag name as the acr release tag (both repos are assumed to cut a
-          matching version tag for a coordinated release).
+          Required for a manual run; a v* tag push on this repo instead reads
+          contracts/acr-mcp/release.txt (acr and cfa version independently,
+          so nothing assumes a matching acr v* tag exists).
         required: true
         type: string
       publish_as:
@@ -72,6 +80,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            contracts/acr-mcp/release.txt
+          sparse-checkout-cone-mode: false
+
       - name: Resolve source and destination tags
         id: tags
         env:
@@ -83,7 +98,10 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "push" ]; then
-            acr_tag="$REF_NAME"
+            pin=contracts/acr-mcp/release.txt
+            test -s "$pin" || { echo "::error::$pin is missing or empty -- cannot resolve the acr release to mirror"; exit 1; }
+            acr_tag="$(tr -d '[:space:]' < "$pin")"
+            [ -n "$acr_tag" ] || { echo "::error::$pin is blank"; exit 1; }
             cfa_tag="$REF_NAME"
             prerelease=false
           else
