@@ -100,7 +100,7 @@ jobs:
           merge-multiple: true
           path: results
       - name: Aggregate (fails loudly)
-        run: go run ./liveness/aggregate -legs liveness/legs.json -results results -summary "$GITHUB_STEP_SUMMARY"
+        run: go run ./liveness/aggregate -workflow liveness.yml -legs liveness/legs.json -results results -summary "$GITHUB_STEP_SUMMARY"
 
   report:
     name: open or update the liveness-failure issue

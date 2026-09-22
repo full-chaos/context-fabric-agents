@@ -5,8 +5,15 @@
       "id": "l1",
       "mode": "live",
       "description": "L1 protocol probe against https://mcp.fullchaos.dev/mcp (go-sdk v1.8.0 client)",
+      "workflow": "liveness.yml",
       "job": "l1",
-      "required_steps": ["a_discover", "b_initialize", "c_contract", "d_context", "e_unauth"]
+      "required_steps": [
+        "a_discover",
+        "b_initialize",
+        "c_contract",
+        "d_context",
+        "e_unauth"
+      ]
     },
     {
       "id": "l1-trial",
@@ -16,9 +23,51 @@
       "issue": "https://linear.app/fullchaos/issue/CHAOS-6222"
     },
     {
+      "id": "l2-claude-code",
+      "mode": "live",
+      "description": "L2: pinned Claude Code (ci/claude-code lockfile) with the committed bearer config, pointed at the loopback recording proxy; connect-only `claude mcp list` + `claude mcp get dev-health`; recorded first method + revision must equal compat.json",
+      "workflow": "liveness-l2.yml",
+      "job": "l2-claude-code",
+      "required_steps": [
+        "a_install",
+        "b_render",
+        "c_connect",
+        "d_recorded",
+        "e_compat"
+      ]
+    },
+    {
+      "id": "l2-codex",
+      "mode": "live",
+      "description": "L2: pinned Codex (ci/codex lockfile) with the committed bearer config.toml, pointed at the loopback recording proxy; connect-only `codex app-server` mcpServerStatus/list (codex/proof/mcp_status.py, no LLM call); recorded first method + revision must equal compat.json",
+      "workflow": "liveness-l2.yml",
+      "job": "l2-codex",
+      "required_steps": [
+        "a_install",
+        "b_render",
+        "c_connect",
+        "d_recorded",
+        "e_compat"
+      ]
+    },
+    {
+      "id": "l2-opencode-v2",
+      "mode": "live",
+      "description": "L2: pinned OpenCode v2 (ci/opencode lockfile, @opencode/cli) with the committed v2 bearer config, pointed at the loopback recording proxy; connect-only `opencode mcp list` (no LLM call); recorded first method + revision must equal compat.json",
+      "workflow": "liveness-l2.yml",
+      "job": "l2-opencode-v2",
+      "required_steps": [
+        "a_install",
+        "b_render",
+        "c_connect",
+        "d_recorded",
+        "e_compat"
+      ]
+    },
+    {
       "id": "opencode",
       "mode": "static-only",
-      "description": "OpenCode v1/v2 configs: strict JSON parse + doc-derived shape checks in every PR (go test ./...); v1 additionally checked live against https://opencode.ai/config.json (job opencode-schema, CHAOS-6203). No client binary parses these in CI."
+      "description": "OpenCode v1/v2 configs: strict JSON parse + doc-derived shape checks in every PR (go test ./...); v1 additionally checked live against https://opencode.ai/config.json (job opencode-schema, CHAOS-6203). OpenCode v1 has no client leg in CI; OpenCode v2 connects live in leg l2-opencode-v2."
     },
     {
       "id": "cursor",

@@ -1,0 +1,298 @@
+name: liveness-l2
+
+# CHAOS-6205. Scheduled liveness L2: real-client connect matrix.
+#
+# Each live L2 leg in liveness/legs.json (workflow liveness-l2.yml) is one
+# job. The job installs the pinned client from its lockfile (npm ci under
+# ci/<client>), starts the loopback recording proxy (liveness/proxy: listens
+# on 127.0.0.1 only; the upstream https://mcp.fullchaos.dev is a compiled
+# constant) and runs liveness/l2: render the committed bearer config with
+# the URL set to the proxy, run the client's connect-only command (no LLM
+# call), then compare the recorded first method + negotiated revision with
+# contracts/acr-mcp/compat.json. Any change, up or down, is red with
+# "update compat.json". The proxy records method, revisions, HTTP status and
+# latency only: never a header, a body or a token.
+#
+# Legs run one after another (rate budget: at most 28 forwarded requests per
+# run, spaced 2 s apart by the proxy). The schedule is offset from L1
+# (liveness.yml, 41 */6) by 3.5 h. workflow_dispatch has no inputs. The
+# aggregate job is the L1 fail-loud aggregator scoped with
+# -workflow liveness-l2.yml; a red run opens or updates the one
+# liveness-failure issue.
+on:
+  schedule:
+    - cron: '11 3-21/6 * * *'
+  workflow_dispatch:
+  # Same-repo PRs that change a leg's inputs run the matrix too (fork PRs get
+  # no secret: every job is skipped there). A red PR run does not open the
+  # liveness-failure issue.
+  pull_request:
+    paths:
+      - 'liveness/**'
+      - 'ci/**'
+      - 'contracts/acr-mcp/compat.json'
+      - 'plugins/configs/claude-code.bearer.mcp.json'
+      - 'codex/configs/config.bearer.toml'
+      - 'codex/proof/**'
+      - 'opencode/configs/opencode-v2.bearer.json'
+      - '.github/workflows/liveness-l2.yml'
+
+permissions: {}
+
+concurrency:
+  group: liveness-l2-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  l2-claude-code:
+    name: l2 claude-code
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    env:
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
+      CLIENT: claude-code
+      PIN_DIR: ci/claude-code
+      PORT: '18765'
+      MAX_REQUESTS: '12'
+    steps:
+      - name: Mask credential
+        run: |
+          if [ -n "$ACR_MCP_CI_BEARER" ]; then echo "::add-mask::$ACR_MCP_CI_BEARER"; fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install the pinned client (lockfile)
+        run: |
+          npm ci --no-audit --no-fund --prefix "$PIN_DIR"
+          echo "$GITHUB_WORKSPACE/$PIN_DIR/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Build the proxy and the leg
+        run: |
+          go build -o "$RUNNER_TEMP/cfa-proxy" ./liveness/proxy
+          go build -o "$RUNNER_TEMP/cfa-l2" ./liveness/l2
+      - name: Start the loopback recording proxy
+        run: |
+          "$RUNNER_TEMP/cfa-proxy" -listen "127.0.0.1:$PORT" -record "$RUNNER_TEMP/proxy.jsonl" \
+            -max-requests "$MAX_REQUESTS" -min-interval 2s > "$RUNNER_TEMP/proxy.log" 2>&1 &
+          echo "PROXY_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 50); do grep -q '^ready ' "$RUNNER_TEMP/proxy.log" && break; sleep 0.2; done
+          cat "$RUNNER_TEMP/proxy.log"
+          grep -q '^ready ' "$RUNNER_TEMP/proxy.log"
+      - name: Run the leg (writes the result on pass and on fail)
+        run: |
+          "$RUNNER_TEMP/cfa-l2" -client "$CLIENT" -proxy-url "http://127.0.0.1:$PORT/mcp" \
+            -records "$RUNNER_TEMP/proxy.jsonl" -out "results/l2-$CLIENT.json"
+      - name: Stop the proxy; show the recording (method, revisions, status, latency only)
+        if: always()
+        run: |
+          if [ -n "${PROXY_PID:-}" ]; then kill "$PROXY_PID" 2>/dev/null || true; fi
+          cat "$RUNNER_TEMP/proxy.jsonl" 2>/dev/null || echo "no recording"
+      - name: Upload the result record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: liveness-result-l2-claude-code
+          path: results/l2-claude-code.json
+          if-no-files-found: error
+          retention-days: 30
+
+  l2-codex:
+    name: l2 codex
+    needs: [l2-claude-code]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    env:
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
+      CLIENT: codex
+      PIN_DIR: ci/codex
+      PORT: '18766'
+      MAX_REQUESTS: '8'
+    steps:
+      - name: Mask credential
+        run: |
+          if [ -n "$ACR_MCP_CI_BEARER" ]; then echo "::add-mask::$ACR_MCP_CI_BEARER"; fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install the pinned client (lockfile)
+        run: |
+          npm ci --no-audit --no-fund --prefix "$PIN_DIR"
+          echo "$GITHUB_WORKSPACE/$PIN_DIR/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Build the proxy and the leg
+        run: |
+          go build -o "$RUNNER_TEMP/cfa-proxy" ./liveness/proxy
+          go build -o "$RUNNER_TEMP/cfa-l2" ./liveness/l2
+      - name: Start the loopback recording proxy
+        run: |
+          "$RUNNER_TEMP/cfa-proxy" -listen "127.0.0.1:$PORT" -record "$RUNNER_TEMP/proxy.jsonl" \
+            -max-requests "$MAX_REQUESTS" -min-interval 2s > "$RUNNER_TEMP/proxy.log" 2>&1 &
+          echo "PROXY_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 50); do grep -q '^ready ' "$RUNNER_TEMP/proxy.log" && break; sleep 0.2; done
+          cat "$RUNNER_TEMP/proxy.log"
+          grep -q '^ready ' "$RUNNER_TEMP/proxy.log"
+      - name: Run the leg (writes the result on pass and on fail)
+        run: |
+          "$RUNNER_TEMP/cfa-l2" -client "$CLIENT" -proxy-url "http://127.0.0.1:$PORT/mcp" \
+            -records "$RUNNER_TEMP/proxy.jsonl" -out "results/l2-$CLIENT.json"
+      - name: Stop the proxy; show the recording (method, revisions, status, latency only)
+        if: always()
+        run: |
+          if [ -n "${PROXY_PID:-}" ]; then kill "$PROXY_PID" 2>/dev/null || true; fi
+          cat "$RUNNER_TEMP/proxy.jsonl" 2>/dev/null || echo "no recording"
+      - name: Upload the result record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: liveness-result-l2-codex
+          path: results/l2-codex.json
+          if-no-files-found: error
+          retention-days: 30
+
+  l2-opencode-v2:
+    name: l2 opencode-v2
+    needs: [l2-codex]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    env:
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
+      CLIENT: opencode-v2
+      PIN_DIR: ci/opencode
+      PORT: '18767'
+      MAX_REQUESTS: '8'
+    steps:
+      - name: Mask credential
+        run: |
+          if [ -n "$ACR_MCP_CI_BEARER" ]; then echo "::add-mask::$ACR_MCP_CI_BEARER"; fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install the pinned client (lockfile)
+        run: |
+          npm ci --no-audit --no-fund --prefix "$PIN_DIR"
+          echo "$GITHUB_WORKSPACE/$PIN_DIR/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Build the proxy and the leg
+        run: |
+          go build -o "$RUNNER_TEMP/cfa-proxy" ./liveness/proxy
+          go build -o "$RUNNER_TEMP/cfa-l2" ./liveness/l2
+      - name: Start the loopback recording proxy
+        run: |
+          "$RUNNER_TEMP/cfa-proxy" -listen "127.0.0.1:$PORT" -record "$RUNNER_TEMP/proxy.jsonl" \
+            -max-requests "$MAX_REQUESTS" -min-interval 2s > "$RUNNER_TEMP/proxy.log" 2>&1 &
+          echo "PROXY_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 50); do grep -q '^ready ' "$RUNNER_TEMP/proxy.log" && break; sleep 0.2; done
+          cat "$RUNNER_TEMP/proxy.log"
+          grep -q '^ready ' "$RUNNER_TEMP/proxy.log"
+      - name: Run the leg (writes the result on pass and on fail)
+        run: |
+          "$RUNNER_TEMP/cfa-l2" -client "$CLIENT" -proxy-url "http://127.0.0.1:$PORT/mcp" \
+            -records "$RUNNER_TEMP/proxy.jsonl" -out "results/l2-$CLIENT.json"
+      - name: Stop the proxy; show the recording (method, revisions, status, latency only)
+        if: always()
+        run: |
+          if [ -n "${PROXY_PID:-}" ]; then kill "$PROXY_PID" 2>/dev/null || true; fi
+          cat "$RUNNER_TEMP/proxy.jsonl" 2>/dev/null || echo "no recording"
+      - name: Upload the result record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: liveness-result-l2-opencode-v2
+          path: results/l2-opencode-v2.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    name: aggregate
+    needs: [l2-claude-code, l2-codex, l2-opencode-v2]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    env:
+      NEEDS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Download result records
+        id: download
+        # A download problem must not hide the verdict: the aggregator then
+        # reports every live leg as missing.
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: liveness-result-*
+          merge-multiple: true
+          path: results
+      - name: Wait before retrying the download
+        if: steps.download.outcome == 'failure'
+        run: sleep 20
+      - name: Download result records (one retry; the artifact API returns transient 403s)
+        if: steps.download.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: liveness-result-*
+          merge-multiple: true
+          path: results
+      - name: Aggregate (fails loudly)
+        run: go run ./liveness/aggregate -workflow liveness-l2.yml -legs liveness/legs.json -results results -summary "$GITHUB_STEP_SUMMARY"
+
+  report:
+    name: open or update the liveness-failure issue
+    needs: [aggregate]
+    if: always() && needs.aggregate.result != 'success' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      EVENT: ${{ github.event_name }}
+      REF: ${{ github.ref_name }}
+      SHA: ${{ github.sha }}
+      AGG: ${{ needs.aggregate.result }}
+    steps:
+      - name: Open or update one issue
+        run: |
+          gh label create liveness-failure --force --color b60205 \
+            --description "scheduled liveness run failed" >/dev/null
+          line="Liveness L2 run failed (aggregate: ${AGG}; event: ${EVENT}; ref: ${REF}; sha: ${SHA}): ${RUN_URL}"
+          existing=$(gh issue list --label liveness-failure --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$line"
+            echo "updated issue #$existing"
+          else
+            {
+              echo "The scheduled liveness workflow for the hosted MCP is red."
+              echo
+              echo "$line"
+              echo
+              echo "Each later red run adds a comment here. The run summary names the failing leg and step."
+              echo "Runbook: liveness/README.md and liveness/RUNBOOK.md. Close this issue once a run is green."
+            } > body.md
+            gh issue create --title "Liveness failure: hosted MCP" --label liveness-failure --body-file body.md
+          fi

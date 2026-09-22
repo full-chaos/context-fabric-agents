@@ -145,6 +145,9 @@ type Leg struct {
 	ID          string `json:"id"`
 	Mode        string `json:"mode"`
 	Description string `json:"description"`
+	// Workflow is the workflow file (under .github/workflows) whose
+	// aggregate job judges a live leg. Required for live legs.
+	Workflow string `json:"workflow,omitempty"`
 	// Job is the workflow job id that runs a live leg.
 	Job string `json:"job,omitempty"`
 	// RequiredSteps must all be present and pass in a live leg's result.
@@ -160,10 +163,24 @@ type Legs struct {
 	Legs          []Leg  `json:"legs"`
 }
 
-var legIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+var (
+	legIDRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	workflowRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}\.yml$`)
+)
 
 // ResultFile is the only file name a live leg may write.
 func ResultFile(id string) string { return id + ".json" }
+
+// LiveIn returns the live legs judged by one workflow file.
+func (l *Legs) LiveIn(workflow string) []Leg {
+	var out []Leg
+	for _, g := range l.Live() {
+		if g.Workflow == workflow {
+			out = append(out, g)
+		}
+	}
+	return out
+}
 
 // Live returns the live legs.
 func (l *Legs) Live() []Leg {
@@ -206,12 +223,15 @@ func DecodeLegs(data []byte) (*Legs, error) {
 				errs = append(errs, fmt.Sprintf("leg %s: live leg needs a unique job", g.ID))
 			}
 			jobs[g.Job] = true
+			if !workflowRe.MatchString(g.Workflow) {
+				errs = append(errs, fmt.Sprintf("leg %s: live leg needs a workflow file name (for example liveness.yml)", g.ID))
+			}
 			if g.Reason != "" || g.Issue != "" {
 				errs = append(errs, fmt.Sprintf("leg %s: reason/issue only apply to declared-off", g.ID))
 			}
 		case ModeStaticOnly:
-			if g.Job != "" || len(g.RequiredSteps) > 0 || g.Reason != "" || g.Issue != "" {
-				errs = append(errs, fmt.Sprintf("leg %s: static-only takes no job, steps, reason or issue", g.ID))
+			if g.Job != "" || g.Workflow != "" || len(g.RequiredSteps) > 0 || g.Reason != "" || g.Issue != "" {
+				errs = append(errs, fmt.Sprintf("leg %s: static-only takes no workflow, job, steps, reason or issue", g.ID))
 			}
 		case ModeDeclaredOff:
 			if strings.TrimSpace(g.Reason) == "" {
@@ -220,8 +240,8 @@ func DecodeLegs(data []byte) (*Legs, error) {
 			if !validIssueLink(g.Issue) {
 				errs = append(errs, fmt.Sprintf("leg %s: declared-off needs an https issue link (linear.app or github.com)", g.ID))
 			}
-			if g.Job != "" || len(g.RequiredSteps) > 0 {
-				errs = append(errs, fmt.Sprintf("leg %s: declared-off takes no job or steps", g.ID))
+			if g.Job != "" || g.Workflow != "" || len(g.RequiredSteps) > 0 {
+				errs = append(errs, fmt.Sprintf("leg %s: declared-off takes no workflow, job or steps", g.ID))
 			}
 		default:
 			errs = append(errs, fmt.Sprintf("leg %s: mode %q is not live|static-only|declared-off", g.ID, g.Mode))

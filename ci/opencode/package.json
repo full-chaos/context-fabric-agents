@@ -1,0 +1,9 @@
+{
+  "name": "context-fabric-agents-opencode-pin",
+  "private": true,
+  "description": "Pins the OpenCode v2 CLI version used by the liveness L2 leg. A new version is a reviewed PR that also updates contracts/acr-mcp/compat.json.",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@opencode/cli": "2.0.13"
+  }
+}

@@ -24,6 +24,7 @@ func run(args []string, needsJSON string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	legsPath := fs.String("legs", "liveness/legs.json", "leg declarations")
 	results := fs.String("results", "results", "directory holding <leg>.json result records")
+	workflow := fs.String("workflow", "liveness.yml", "workflow file whose live legs this run judges")
 	summary := fs.String("summary", "", "append the markdown summary to this file (GITHUB_STEP_SUMMARY)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -40,7 +41,7 @@ func run(args []string, needsJSON string, stdout, stderr io.Writer) int {
 		appendSummary(*summary, "## Liveness: RED\n\n"+err.Error()+"\n", stderr)
 		return 1
 	}
-	rep := aggregate.Run(legs, needs, *results)
+	rep := aggregate.Run(legs, *workflow, needs, *results)
 	md := rep.Markdown()
 	fmt.Fprint(stdout, md)
 	appendSummary(*summary, md, stderr)
