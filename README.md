@@ -62,6 +62,13 @@ Once connected: what `context_for_task` needs, the investigate → clarify
 → result → evidence flow, and the guide resources and prompts every
 client can read. See [docs/usage.md](docs/usage.md).
 
+## Headless or remote host
+
+Codex and Claude Code both need a browser on the same machine to sign in.
+If you're running on a headless host or over SSH, use
+[`login`](docs/login.md) instead: it walks an RFC 8628 device grant, so you
+approve from a browser on any other machine.
+
 ## Self-hosted
 
 Every config names one URL field. Point it at your own deployment

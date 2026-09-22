@@ -9,6 +9,7 @@ for every client.
 | Doc | Holds |
 |---|---|
 | [get-a-credential.md](get-a-credential.md) | OAuth is the default (no credential to get); where the headless/CI bearer token comes from |
+| [login.md](login.md) | `cmd/login`: device-grant sign-in for a headless or remote client (CHAOS-6235) |
 | [usage.md](usage.md) | `context_for_task` scope, the investigate → clarify → result → evidence flow, guide resources and prompts |
 | [self-hosted.md](self-hosted.md) | The one URL field to edit to point a client at your own deployment |
 | [migration.md](migration.md) | Moving from the ACR project's embedded `docs/examples/mcp-clients/*-remote-*` examples |

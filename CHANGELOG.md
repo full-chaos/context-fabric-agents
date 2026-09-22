@@ -31,6 +31,18 @@ calls "major" bumps the minor digit instead (`0.x.0 -> 0.(x+1).0`), per semver's
 "anything may change" rule for `0.y.z`. The bump becomes a real major (`1.0.0+`) once the
 repo has shipped a `v1.0.0` release.
 
+## [Unreleased] - 0.3.0
+
+- `cmd/login`: a headless/remote device-grant login helper (RFC 8628), released as a
+  compiled binary per os/arch (`linux/amd64`, `linux/arm64`, `darwin/amd64`,
+  `darwin/arm64`) alongside the client-bundle tarballs. Discovers the authorization
+  server from the target MCP endpoint's own 401 challenge, registers a public client,
+  starts a device authorization, polls for approval, and writes the bearer where Codex
+  or Claude Code reads it (`--client codex|claude-code`), or to a file only
+  (`--client env`) or stdout (`--client stdout`, for scripting). See
+  [docs/login.md](docs/login.md). New user-facing artifact: `0.2.0 -> 0.3.0` per the
+  release rule above (tool/capability added).
+
 ## [Unreleased] - 0.2.0
 
 - Liveness L3: OAuth discovery chain probe (unauthenticated 401 -> resource_metadata ->

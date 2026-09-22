@@ -34,6 +34,12 @@ credential to get — the plugin's `config.toml` table uses OAuth
 or CI use, export a bearer token in `ACR_MCP_TOKEN` before starting Codex
 and use `configs/config.bearer.toml` instead.
 
+**Headless/remote host (no browser on the machine running Codex):**
+`codex mcp login` needs a browser on the same host. Run
+[`login`](../docs/login.md) instead — `go run ./cmd/login --client codex`
+or a downloaded release binary — and approve it from a browser on any
+other machine. It writes `ACR_MCP_TOKEN` and wires `config.toml` for you.
+
 ## Verify
 
 ```

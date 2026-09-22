@@ -49,6 +49,13 @@ OAuth). For headless/CI use (see above), a bearer token in
 or an operator-minted credential. Set it before you start Claude Code —
 Claude Code reads environment variables once, at launch.
 
+**Headless/remote host (no browser on the machine running Claude Code):**
+`/mcp`'s own OAuth login needs a browser on the same host. Run
+[`login`](../docs/login.md) instead — `go run ./cmd/login --client claude-code`
+or a downloaded release binary — and approve it from a browser on any
+other machine. It runs `claude mcp add` for you (bearer variant, token
+never touches the config file) and writes `ACR_MCP_TOKEN`.
+
 ## Verify
 
 ```
