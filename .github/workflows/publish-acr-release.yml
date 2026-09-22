@@ -92,24 +92,19 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # workflow_run otherwise checks out the default branch's CURRENT
-          # tip, not the commit release.yml actually ran for -- if the pin
-          # file is bumped again on main before this run starts, the wrong
-          # (newer) pin would be read for an OLDER tag's mirror (codex round
-          # cf-6211-r3, executed repro). Pin explicitly to the triggering
-          # run's own commit; workflow_dispatch has no workflow_run context,
-          # so it falls through to the ref that dispatched this workflow.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          sparse-checkout: |
-            contracts/acr-mcp/release.txt
-          sparse-checkout-cone-mode: false
-
       - name: Resolve source and destination tags
         id: tags
+        # No actions/checkout here on purpose: a `workflow_run`-triggered job
+        # runs with this repo's full permissions/secrets, and CodeQL flags
+        # (rightly, as a general rule regardless of what release.yml's own
+        # triggers happen to be) checking an event-supplied ref out into the
+        # workspace of a privileged job as "checkout of untrusted code in a
+        # privileged context" -- caught on this PR's own CI. The pin file is
+        # fetched read-only via the Contents API instead, pinned to the exact
+        # commit release.yml ran for (github.event.workflow_run.head_sha),
+        # never written into the workspace or executed.
         env:
+          GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           INPUT_ACR_TAG: ${{ github.event.inputs.acr_release_tag }}
           INPUT_PUBLISH_AS: ${{ github.event.inputs.publish_as }}
@@ -117,6 +112,7 @@ jobs:
           WR_EVENT: ${{ github.event.workflow_run.event }}
           WR_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           WR_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WR_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           proceed=true
@@ -139,10 +135,12 @@ jobs:
               proceed=false
             fi
             if [ "$proceed" = true ]; then
-              pin=contracts/acr-mcp/release.txt
-              test -s "$pin" || { echo "::error::$pin is missing or empty -- cannot resolve the acr release to mirror"; exit 1; }
-              acr_tag="$(tr -d '[:space:]' < "$pin")"
-              [ -n "$acr_tag" ] || { echo "::error::$pin is blank"; exit 1; }
+              # Pinned to the exact commit release.yml ran for -- never the
+              # default branch's current tip, which could have moved the pin
+              # again before this run started.
+              pin_json="$(gh api "repos/${{ github.repository }}/contents/contracts/acr-mcp/release.txt?ref=${WR_HEAD_SHA}")"
+              acr_tag="$(printf '%s' "$pin_json" | jq -r '.content' | base64 -d | tr -d '[:space:]')"
+              [ -n "$acr_tag" ] || { echo "::error::contracts/acr-mcp/release.txt is missing or blank at ${WR_HEAD_SHA}"; exit 1; }
               cfa_tag="$WR_HEAD_BRANCH"
               prerelease=false
             else
