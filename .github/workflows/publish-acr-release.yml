@@ -293,12 +293,32 @@ jobs:
           # would pass every check here undetected. Every downloaded file's
           # own name+bytes are already cosign/sha256-verified above, but that
           # proves authenticity+integrity of what acr published under that
-          # name, not that the name matches the product inside it. Add a
-          # content sniff: none of the staged files' bytes may contain the
-          # literal string "acr-api". Measured against a full real acr
-          # release (36 assets, 15 acr-mcp-named: JSON SBOM/trivy files and
-          # the binary archives/OCI tar) -- zero false positives.
-          for f in acr-publish/*; do
+          # name, not that the name matches the product inside it.
+          #
+          # SCOPE, corrected after r2's P1 (executed repro: a blanket check
+          # over every staged file self-refuses EVERY publish, because the
+          # renamed SHA256SUMS is INTENTIONALLY the whole signed manifest and
+          # legitimately lists acr-api's checksummed filenames by name -- see
+          # the "SCOPE OF ANY BUILD..." note above on why that file stays
+          # whole). This check therefore applies ONLY to the small per-image/
+          # per-archive JSON metadata files (*.spdx.json / *-trivy.json),
+          # which is exactly the file class r1's fixture attacked and which
+          # measured zero real "acr-api" mentions across a full real acr
+          # release. It deliberately does NOT extend into the binary
+          # archives (.tar.gz/.zip/.oci.tar): decompressing and grepping
+          # their contents was considered and rejected -- the real acr-mcp
+          # binary itself legitimately embeds the literal string "acr-api"
+          # (a shared OAuth/telemetry vocabulary constant, confirmed via
+          # `strings` on the actual release binary: "...acr-api oauth
+          # step..."), so a content grep over decompressed archive bytes
+          # would self-refuse every real, correct release the same way the
+          # unscoped SHA256SUMS check did. Archive integrity/authenticity is
+          # already covered by the cosign+SHA256SUMS verification above;
+          # semantically verifying an archive's payload matches its filename
+          # is a real residual gap, stated in RISK-NOTES, not silently
+          # dropped.
+          for f in acr-publish/*.spdx.json acr-publish/*-trivy.json; do
+            [ -e "$f" ] || continue
             if grep -aq 'acr-api' "$f"; then
               echo "::error::$(basename "$f") is staged as an acr-mcp asset but its content references acr-api -- refusing to publish"
               exit 1
