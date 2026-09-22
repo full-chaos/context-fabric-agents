@@ -65,12 +65,20 @@ connects, ask Codex a question that needs the `dev-health` tools.
 
 ## Uninstall
 
-Plugin, whole marketplace (removes every plugin it provided — here, just
-this one; no dedicated single-plugin remove command is documented):
+Plugin (removes the plugin, its skill, and its MCP entry together —
+`codex mcp list` no longer shows `dev-health` afterward):
 
 ```
-codex plugin marketplace remove dev-health
+codex plugin remove dev-health@dev-health
 ```
+
+This exact form (`<plugin>@<marketplace>`) is not stated on the vendor
+doc pages this repo cites; it comes from `codex plugin remove --help` and
+was executed to confirm it removes the MCP entry, not just the plugin
+cache. Removing only the marketplace
+(`codex plugin marketplace remove dev-health`) does **not** remove the
+plugin's MCP entry — `codex mcp list` keeps showing `dev-health` until
+you also run `codex plugin remove`, or the plugin.
 
 Config only: delete the `[mcp_servers.dev-health]` table from
 `config.toml` and remove `~/.agents/skills/dev-health/` (or
