@@ -379,6 +379,45 @@ func TestWrite_ClaudeCode_InvokesCLIWhenPresent(t *testing.T) {
 	}
 }
 
+// TestWrite_ClaudeCode_CLIPresentButFailsFallsBackGracefully is chris's
+// clarification on cf-6235-r2/r3: "you can't use a fake claude path because
+// it wants a login to start" -- a real `claude` CLI that IS on PATH but
+// fails (most commonly: not logged in) must be treated exactly like the
+// CLI-missing case, not as a hard error. Write still succeeds (the token is
+// saved either way); ManualCommand and a Warning explaining why are set.
+func TestWrite_ClaudeCode_CLIPresentButFailsFallsBackGracefully(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fake binary is unix-only")
+	}
+	dir := t.TempDir()
+	fakeBinDir := t.TempDir()
+	script := "#!/bin/sh\necho 'Not logged in. Run `claude login` first.' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(fakeBinDir, "claude"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBinDir)
+
+	result, err := Write(context.Background(), TargetClaudeCode, dir, "test_token_x", render.RemoteURL)
+	if err != nil {
+		t.Fatalf("Write: %v, want success (the CLI failing must not fail Write)", err)
+	}
+	if result.EnvFile == "" {
+		t.Error("want the token saved to the env file regardless")
+	}
+	if result.ConfigWritten != "" {
+		t.Errorf("ConfigWritten = %q, want empty -- the CLI invocation failed", result.ConfigWritten)
+	}
+	if result.ManualCommand == "" {
+		t.Fatal("want ManualCommand set as the fallback")
+	}
+	if strings.Contains(result.ManualCommand, "test_token_x") {
+		t.Error("ManualCommand must never contain the literal token")
+	}
+	if result.Warning == "" {
+		t.Error("want a Warning distinguishing this from the CLI-missing case")
+	}
+}
+
 // TestWrite_ClaudeCode_UsesTheGivenMCPURL is cf-6235-r1 finding 3 for the
 // Claude Code writer: a non-default --mcp-url must reach `claude mcp add`,
 // not the compiled-in RemoteURL default.

@@ -69,9 +69,11 @@ if the `claude` CLI is on `PATH` — the same command
 setup. The header names `ACR_MCP_TOKEN` by reference; the literal token
 never reaches Claude Code's config file, only the environment variable
 does. `login` also writes `ACR_MCP_TOKEN` to a 0600 env file. If `claude`
-is not on `PATH`, it prints the exact command to run yourself instead
-(never the token). Either way, source the env file before starting Claude
-Code:
+is not on `PATH`, **or is on `PATH` but the command fails** (most commonly:
+not signed in to Claude Code yet), `login` still succeeds — it prints the
+exact command to run yourself instead (never the token) and says why. Sign
+in with `claude login` first if that was the reason. Either way, source the
+env file before starting Claude Code:
 
 ```bash
 source ~/.config/context-fabric-agents/login/claude-code.env

@@ -156,11 +156,19 @@ func Write(ctx context.Context, target TargetClient, dir, token, mcpURL string) 
 			return nil, err
 		}
 		result := &WriteResult{EnvFile: path}
+		// Any failure to run `claude mcp add` -- the binary missing, OR
+		// present but failing (e.g. not logged in: chris, "you can't use a
+		// fake claude path because it wants a login to start" -- the same
+		// applies to a genuinely un-authenticated real CLI) -- falls back
+		// to the manual command exactly the same way. The token is still
+		// saved either way; only the config-wiring step is skipped.
 		if err := runClaudeMCPAdd(ctx, mcpURL); err != nil {
-			if !errors.Is(err, exec.ErrNotFound) {
-				return nil, fmt.Errorf("claude mcp add: %w", err)
-			}
 			result.ManualCommand = claudeMCPAddCommand(mcpURL)
+			if !errors.Is(err, exec.ErrNotFound) {
+				result.Warning = fmt.Sprintf(
+					"`claude mcp add` failed (%v) -- the token was saved, but Claude Code's config was not updated; "+
+						"run the command above yourself (after `claude login` if that is why it failed)", err)
+			}
 			return result, nil
 		}
 		result.ConfigWritten = claudeMCPAddCommand(mcpURL)

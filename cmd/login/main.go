@@ -152,7 +152,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "login: wired %s\n", result.ConfigWritten)
 	}
 	if result.ManualCommand != "" {
-		fmt.Fprintf(stderr, "login: %q not found on PATH; run this yourself:\n\n    %s\n\n", string(target), result.ManualCommand)
+		if result.Warning == "" {
+			// No Warning means the CLI itself was never found -- Warning
+			// carries a more specific reason (e.g. present but failing,
+			// commonly "not logged in") when there is one.
+			fmt.Fprintf(stderr, "login: %q not found on PATH; run this yourself:\n\n    %s\n\n", string(target), result.ManualCommand)
+		} else {
+			fmt.Fprintf(stderr, "login: run this yourself:\n\n    %s\n\n", result.ManualCommand)
+		}
 	}
 	if result.Warning != "" {
 		fmt.Fprintf(stderr, "login: WARNING: %s\n", result.Warning)
