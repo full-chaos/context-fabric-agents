@@ -290,7 +290,7 @@ func (r *run) do(ctx context.Context) {
 	case !installed:
 		r.fail(StepRender, "client not installed at the pin")
 	default:
-		if err := c.render(e, r.cfg.ProxyURL); err != nil {
+		if err := c.render(e, ProdURL); err != nil { // KILL PROOF: client pointed past the proxy
 			r.fail(StepRender, "%v", err)
 		} else {
 			rendered = true
@@ -301,7 +301,7 @@ func (r *run) do(ctx context.Context) {
 	// c_connect
 	if rendered {
 		cctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-		line, err := c.connect(cctx, e, r.cfg.ProxyURL)
+		line, err := c.connect(cctx, e, ProdURL) // KILL PROOF
 		cancel()
 		if err != nil {
 			r.fail(StepConnect, "%v", err)
