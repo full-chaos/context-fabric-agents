@@ -159,9 +159,67 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  l2-opencode-v2:
+    name: l2 opencode-v2
+    needs: [l2-codex]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    env:
+      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
+      CLIENT: opencode-v2
+      PIN_DIR: ci/opencode
+      PORT: '18767'
+      MAX_REQUESTS: '8'
+    steps:
+      - name: Mask credential
+        run: |
+          if [ -n "$ACR_MCP_CI_BEARER" ]; then echo "::add-mask::$ACR_MCP_CI_BEARER"; fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install the pinned client (lockfile)
+        run: |
+          npm ci --no-audit --no-fund --prefix "$PIN_DIR"
+          echo "$GITHUB_WORKSPACE/$PIN_DIR/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Build the proxy and the leg
+        run: |
+          go build -o "$RUNNER_TEMP/cfa-proxy" ./liveness/proxy
+          go build -o "$RUNNER_TEMP/cfa-l2" ./liveness/l2
+      - name: Start the loopback recording proxy
+        run: |
+          "$RUNNER_TEMP/cfa-proxy" -listen "127.0.0.1:$PORT" -record "$RUNNER_TEMP/proxy.jsonl" \
+            -max-requests "$MAX_REQUESTS" -min-interval 2s > "$RUNNER_TEMP/proxy.log" 2>&1 &
+          echo "PROXY_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 50); do grep -q '^ready ' "$RUNNER_TEMP/proxy.log" && break; sleep 0.2; done
+          cat "$RUNNER_TEMP/proxy.log"
+          grep -q '^ready ' "$RUNNER_TEMP/proxy.log"
+      - name: Run the leg (writes the result on pass and on fail)
+        run: |
+          "$RUNNER_TEMP/cfa-l2" -client "$CLIENT" -proxy-url "http://127.0.0.1:$PORT/mcp" \
+            -records "$RUNNER_TEMP/proxy.jsonl" -out "results/l2-$CLIENT.json"
+      - name: Stop the proxy; show the recording (method, revisions, status, latency only)
+        if: always()
+        run: |
+          if [ -n "${PROXY_PID:-}" ]; then kill "$PROXY_PID" 2>/dev/null || true; fi
+          cat "$RUNNER_TEMP/proxy.jsonl" 2>/dev/null || echo "no recording"
+      - name: Upload the result record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: liveness-result-l2-opencode-v2
+          path: results/l2-opencode-v2.json
+          if-no-files-found: error
+          retention-days: 30
+
   aggregate:
     name: aggregate
-    needs: [l2-claude-code, l2-codex]
+    needs: [l2-claude-code, l2-codex, l2-opencode-v2]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
