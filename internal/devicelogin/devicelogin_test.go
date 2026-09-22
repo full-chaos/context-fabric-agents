@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -254,6 +255,113 @@ func TestDiscover_Failures(t *testing.T) {
 	}
 }
 
+// TestDiscover_RefusesHTTPMCPURL is cf-6235-r2 finding 2: Discover must
+// refuse a plain-http --mcp-url outright (before any network call), never
+// complete a login that would then wire a client to send the bearer token
+// over cleartext.
+func TestDiscover_RefusesHTTPMCPURL(t *testing.T) {
+	_, err := (&Client{}).Discover(context.Background(), "http://mcp.example.test/mcp")
+	if err == nil {
+		t.Fatal("want an error for a plain http --mcp-url")
+	}
+	if !strings.Contains(err.Error(), "https") {
+		t.Errorf("err = %v, want it to name https", err)
+	}
+}
+
+// TestDiscover_RefusesHTTPOnLoopbackWithoutFlag and
+// TestDiscover_AllowsHTTPOnLoopbackWithFlag together pin --insecure-loopback:
+// http is refused on a loopback host by default, and allowed only when the
+// caller opts in.
+func TestDiscover_RefusesHTTPOnLoopbackWithoutFlag(t *testing.T) {
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux) // plain http, on 127.0.0.1
+	t.Cleanup(srv.Close)
+	_, err := (&Client{}).Discover(context.Background(), srv.URL+"/mcp")
+	var apiErr *APIError
+	if err == nil || errors.As(err, &apiErr) {
+		t.Fatalf("err = %v, want a plain (non-APIError) refusal naming --insecure-loopback", err)
+	}
+	if !strings.Contains(err.Error(), "insecure-loopback") {
+		t.Errorf("err = %v, want it to name --insecure-loopback", err)
+	}
+}
+
+func TestDiscover_AllowsHTTPOnLoopbackWithFlag(t *testing.T) {
+	mux := http.NewServeMux()
+	asMux := http.NewServeMux()
+	mcpSrv := httptest.NewServer(mux)
+	t.Cleanup(mcpSrv.Close)
+	asSrv := httptest.NewServer(asMux)
+	t.Cleanup(asSrv.Close)
+
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource/mcp"`, mcpSrv.URL))
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"resource": mcpSrv.URL + "/mcp", "authorization_servers": []string{asSrv.URL}})
+	})
+	asMux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{
+			"issuer": asSrv.URL, "device_authorization_endpoint": asSrv.URL + "/device_authorization",
+			"token_endpoint": asSrv.URL + "/token", "registration_endpoint": asSrv.URL + "/register",
+		})
+	})
+
+	d, err := (&Client{InsecureLoopback: true}).Discover(context.Background(), mcpSrv.URL+"/mcp")
+	if err != nil {
+		t.Fatalf("Discover with InsecureLoopback: %v", err)
+	}
+	if d.Issuer != asSrv.URL {
+		t.Errorf("Issuer = %q, want %q", d.Issuer, asSrv.URL)
+	}
+}
+
+// TestDiscover_RefusesHTTPDeviceAuthorizationEndpoint pins that a
+// downgrade-to-http can't hide in the AS metadata JSON body either: the
+// outer chain (401/PRM/AS metadata) is https throughout, but the
+// device_authorization_endpoint it advertises is http.
+func TestDiscover_RefusesHTTPDeviceAuthorizationEndpoint(t *testing.T) {
+	asMux := http.NewServeMux()
+	downgradedAS := httptest.NewTLSServer(asMux)
+	t.Cleanup(downgradedAS.Close)
+	// device_authorization_endpoint downgraded to http; token_endpoint/
+	// registration_endpoint are never fetched by Discover (only parsed and
+	// scheme-checked), so placeholder https URLs on the same server are
+	// fine -- no handler for them is needed.
+	asMux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{
+			"issuer": downgradedAS.URL, "device_authorization_endpoint": "http://downgrade.example.test/device_authorization",
+			"token_endpoint": downgradedAS.URL + "/token", "registration_endpoint": downgradedAS.URL + "/register",
+		})
+	})
+
+	mux := http.NewServeMux()
+	mcpSrv := httptest.NewTLSServer(mux)
+	t.Cleanup(mcpSrv.Close)
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource/mcp"`, mcpSrv.URL))
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"resource": mcpSrv.URL + "/mcp", "authorization_servers": []string{downgradedAS.URL}})
+	})
+
+	pool := x509.NewCertPool()
+	pool.AddCert(mcpSrv.Certificate())
+	pool.AddCert(downgradedAS.Certificate())
+	client := &Client{HTTPClient: &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}}
+
+	_, err := client.Discover(context.Background(), mcpSrv.URL+"/mcp")
+	if err == nil {
+		t.Fatal("want an error when device_authorization_endpoint is http")
+	}
+	if !strings.Contains(err.Error(), "device_authorization_endpoint") {
+		t.Errorf("err = %v, want it to name device_authorization_endpoint", err)
+	}
+}
+
 func TestRegister(t *testing.T) {
 	f := newFakeAS(t)
 	id, err := f.client().Register(context.Background(), f.as.URL+"/register", "test-client-name")
@@ -268,6 +376,33 @@ func TestRegister(t *testing.T) {
 func TestRegister_NoEndpoint(t *testing.T) {
 	if _, err := (&Client{}).Register(context.Background(), "", "x"); err == nil {
 		t.Fatal("want error for empty registration_endpoint")
+	}
+}
+
+// TestRegister_RefusalParsesTheErrorCode is cf-6235-r2 finding 6: a
+// registration refusal must surface the server's own OAuth error code
+// (invalid_client_metadata, ...), not a generic "registration returned
+// 400" -- the ticket requires "exits non-zero with the acr-api error code
+// on any refusal".
+func TestRegister_RefusalParsesTheErrorCode(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, map[string]any{"error": "invalid_client_metadata", "error_description": "client_name is required"})
+	})
+	srv := httptest.NewTLSServer(mux)
+	t.Cleanup(srv.Close)
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	client := &Client{HTTPClient: &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}}
+
+	_, err := client.Register(context.Background(), srv.URL+"/register", "test-client-name")
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "invalid_client_metadata" {
+		t.Fatalf("err = %v, want APIError{Code: invalid_client_metadata}", err)
+	}
+	if apiErr.Description != "client_name is required" {
+		t.Errorf("Description = %q, want the server's error_description", apiErr.Description)
 	}
 }
 

@@ -3,6 +3,7 @@ package devicelogin
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -150,6 +151,39 @@ func TestWrite_Codex_AppendsBlockOnce(t *testing.T) {
 	}
 }
 
+// TestWrite_Codex_UnrelatedTableSharingTheEnvVarNameStillAppends is
+// cf-6235-r2 finding 3: an unrelated table that happens to reuse the
+// literal `bearer_token_env_var = "ACR_MCP_TOKEN"` line must not be
+// mistaken for the dev-health table -- the real table still gets appended.
+func TestWrite_Codex_UnrelatedTableSharingTheEnvVarNameStillAppends(t *testing.T) {
+	dir := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	configPath := filepath.Join(codexHome, "config.toml")
+	unrelated := "[mcp_servers.other]\nurl = \"https://other.invalid/mcp\"\n" +
+		"bearer_token_env_var = \"ACR_MCP_TOKEN\"\nenabled = true\n"
+	if err := os.WriteFile(configPath, []byte(unrelated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Write(context.Background(), TargetCodex, dir, "test_token_x", render.RemoteURL)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	got := readFile(t, configPath)
+	if !strings.HasPrefix(got, unrelated) {
+		t.Errorf("the unrelated table was not preserved:\n%s", got)
+	}
+	if !strings.Contains(got, "[mcp_servers."+render.ServerName+"]") {
+		t.Errorf("dev-health table was NOT appended (falsely treated the unrelated table's env-var line as already wired):\n%s", got)
+	}
+	if result.ConfigWritten == "" {
+		t.Error("want ConfigWritten set -- the dev-health table really was appended")
+	}
+	if result.Warning != "" {
+		t.Errorf("Warning = %q, want empty -- this is not the ambiguous case", result.Warning)
+	}
+}
+
 func TestWrite_Codex_PreservesExistingConfig(t *testing.T) {
 	dir := t.TempDir()
 	codexHome := t.TempDir()
@@ -256,9 +290,35 @@ func TestWrite_Codex_ExistingOAuthTableIsNotReportedAsWired(t *testing.T) {
 
 func TestClaudeMCPAddCommand_NeverContainsALiteralToken(t *testing.T) {
 	cmd := claudeMCPAddCommand(render.RemoteURL)
-	want := "claude mcp add --transport http dev-health https://mcp.fullchaos.dev/mcp --header 'Authorization: Bearer ${ACR_MCP_TOKEN}'"
+	want := "claude 'mcp' 'add' '--transport' 'http' 'dev-health' 'https://mcp.fullchaos.dev/mcp' '--header' 'Authorization: Bearer ${ACR_MCP_TOKEN}'"
 	if cmd != want {
 		t.Errorf("claudeMCPAddCommand(render.RemoteURL) = %q, want %q", cmd, want)
+	}
+}
+
+// TestShellQuote_RoundTripsThroughARealShell is cf-6235-r2 finding 1: a
+// --mcp-url carrying shell metacharacters must never execute anything when
+// the printed manual command is pasted into a real shell.
+func TestShellQuote_RoundTripsThroughARealShell(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix shell quoting only")
+	}
+	dangerous := []string{
+		`https://mcp.example.test/mcp?x='abc';touch /tmp/should-never-run-` + t.Name(),
+		"https://mcp.example.test/mcp?x=`touch /tmp/should-never-run-backtick`",
+		"a value with spaces and $ENV and ${braces}",
+		`it's got an apostrophe`,
+	}
+	for _, d := range dangerous {
+		quoted := ShellQuote(d)
+		cmd := exec.Command("sh", "-c", "printf '%s' "+quoted)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("sh -c printf %s: %v", quoted, err)
+		}
+		if got := string(out); got != d {
+			t.Errorf("ShellQuote round-trip: sh printed %q, want the original %q (quoted form: %s)", got, d, quoted)
+		}
 	}
 }
 

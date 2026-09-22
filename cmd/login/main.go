@@ -47,8 +47,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	clientFlag := fs.String("client", "", fmt.Sprintf("where to write the token: %s", joinTargets()))
 	scope := fs.String("scope", "context:read evidence:read", "space-separated OAuth scopes to request")
 	timeout := fs.Duration("timeout", 15*time.Minute, "give up waiting for approval after this long (also bounded by the server's own device-code expiry)")
+	insecureLoopback := fs.Bool("insecure-loopback", false, "allow http:// (never https) for --mcp-url and every discovered endpoint, ONLY on a loopback host (127.0.0.1/::1/localhost) -- for local testing against a dev server; a bearer token is never sent over plain http anywhere else")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "usage: login --client <codex|claude-code|env|stdout> [--mcp-url URL] [--scope \"s1 s2\"] [--timeout 15m]")
+		fmt.Fprintln(stderr, "usage: login --client <codex|claude-code|env|stdout> [--mcp-url URL] [--scope \"s1 s2\"] [--timeout 15m] [--insecure-loopback]")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -77,7 +78,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	ctx, cancelTimeout := context.WithTimeout(ctx, *timeout)
 	defer cancelTimeout()
 
-	client := &devicelogin.Client{}
+	client := &devicelogin.Client{InsecureLoopback: *insecureLoopback}
 
 	fmt.Fprintf(stderr, "login: discovering authorization server for %s ...\n", *mcpURL)
 	discovery, err := client.Discover(ctx, *mcpURL)
@@ -90,8 +91,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stderr, "login: registering a client (no prior credential is used or required) ...")
 	clientID, err := client.Register(ctx, discovery.RegistrationEndpoint, "context-fabric-agents-login")
 	if err != nil {
-		fmt.Fprintln(stderr, "login: client registration failed:", err)
-		return 1
+		return reportAPIError(stderr, "client registration", err)
 	}
 
 	device, err := client.StartDeviceAuthorization(ctx, discovery.DeviceAuthorizationEndpoint, clientID, *scope, *mcpURL)
@@ -122,10 +122,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintln(stderr, "login: approved")
 
-	dir, err := devicelogin.StateDir()
-	if err != nil {
-		fmt.Fprintln(stderr, "login:", err)
-		return 1
+	// StateDir resolves $HOME/$XDG_CONFIG_HOME, which can fail on a minimal
+	// headless/CI box -- resolve it only for the targets that actually need
+	// a directory. --client stdout writes no file at all (Write's own
+	// TargetStdout case returns immediately), so it must not fail here,
+	// after approval already happened, over a directory it will never use.
+	var dir string
+	if target != devicelogin.TargetStdout {
+		dir, err = devicelogin.StateDir()
+		if err != nil {
+			fmt.Fprintln(stderr, "login:", err)
+			return 1
+		}
 	}
 	result, err := devicelogin.Write(ctx, target, dir, token.AccessToken, *mcpURL)
 	if err != nil {
@@ -150,7 +158,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "login: WARNING: %s\n", result.Warning)
 	}
 	if result.EnvFile != "" {
-		fmt.Fprintf(stderr, "login: before starting %s, run: source %s\n", target, result.EnvFile)
+		fmt.Fprintf(stderr, "login: before starting %s, run: source %s\n", target, devicelogin.ShellQuote(result.EnvFile))
 	}
 	return 0
 }

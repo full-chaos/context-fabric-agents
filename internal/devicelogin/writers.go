@@ -194,6 +194,28 @@ const codexBlockMarker = "[mcp_servers." // shared prefix; the exact table name 
 // "already wired for headless use."
 var codexBearerMarker = fmt.Sprintf("bearer_token_env_var = %q", render.TokenEnvVar)
 
+// codexTableBlock returns the text of one top-level TOML table -- from its
+// "[name]" header (matched by tableMarker, e.g. "[mcp_servers.dev-health]")
+// up to the next top-level "[" header on its own line, or EOF -- or nil if
+// tableMarker is not present. This is a minimal slice, not a general TOML
+// parser, but it is enough to answer "is a marker string inside THIS
+// table", which a whole-file bytes.Contains cannot: a whole-file check
+// falsely matched an unrelated [mcp_servers.other] table that happened to
+// reuse the literal bearer_token_env_var = "ACR_MCP_TOKEN" line
+// (cf-6235-r2 finding 3).
+func codexTableBlock(doc []byte, tableMarker string) []byte {
+	start := bytes.Index(doc, []byte(tableMarker))
+	if start < 0 {
+		return nil
+	}
+	rest := doc[start+len(tableMarker):]
+	end := len(doc)
+	if next := bytes.Index(rest, []byte("\n[")); next >= 0 {
+		end = start + len(tableMarker) + next + 1 // +1: keep the "\n", not the "["
+	}
+	return doc[start:end]
+}
+
 // writeCodexConfig appends the rendered Codex bearer block (for mcpURL) to
 // ~/.codex/config.toml if a dev-health BEARER mcp_servers table is not
 // already there. It never rewrites an existing table (the user may have
@@ -213,11 +235,11 @@ func writeCodexConfig(mcpURL string) (path string, warning string, err error) {
 	if err != nil && !os.IsNotExist(err) {
 		return "", "", fmt.Errorf("read %s: %w", path, err)
 	}
-	if bytes.Contains(existing, []byte(codexBearerMarker)) {
-		return path, "", nil // already wired for bearer; nothing to do
-	}
 	tableMarker := codexBlockMarker + render.ServerName + "]"
-	if bytes.Contains(existing, []byte(tableMarker)) {
+	if block := codexTableBlock(existing, tableMarker); block != nil {
+		if bytes.Contains(block, []byte(codexBearerMarker)) {
+			return path, "", nil // already wired for bearer; nothing to do
+		}
 		return path, fmt.Sprintf(
 			"an existing [mcp_servers.%s] table in %s does not use a bearer token (likely the OAuth default) -- "+
 				"the ACR_MCP_TOKEN env file was still written, but %s was left untouched to avoid a duplicate table; "+
@@ -260,15 +282,24 @@ func claudeMCPAddArgs(mcpURL string) []string {
 	}
 }
 
+// ShellQuote returns s as a single POSIX-shell single-quoted token, safe to
+// paste into a shell command line regardless of its content -- spaces,
+// `$`, backticks, semicolons, embedded single quotes. Every argument this
+// package prints for a human to copy-paste is quoted this way unconditionally.
+// A prior version quoted only when a character-class heuristic ("does it
+// contain a space or $ or { or }") said an arg looked risky; a `--mcp-url`
+// value containing `;` or a backtick has none of those and printed
+// unquoted, making the printed instruction shell-injectable the moment
+// someone ran it (cf-6235-r2 finding 1).
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 func claudeMCPAddCommand(mcpURL string) string {
 	args := claudeMCPAddArgs(mcpURL)
 	quoted := make([]string, len(args))
 	for i, a := range args {
-		if strings.ContainsAny(a, " ${}") {
-			quoted[i] = "'" + a + "'"
-		} else {
-			quoted[i] = a
-		}
+		quoted[i] = ShellQuote(a)
 	}
 	return "claude " + strings.Join(quoted, " ")
 }

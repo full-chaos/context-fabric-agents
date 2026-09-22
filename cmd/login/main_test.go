@@ -67,17 +67,19 @@ func TestRun_DiscoveryFailure(t *testing.T) {
 	}
 }
 
-// TestRun_EndToEnd_Stdout exercises the whole path against a fake
-// authorization server, using --client stdout so the outcome can be
-// asserted without touching a real client config: discover, register,
-// start, poll through one authorization_pending, then approve.
-func TestRun_EndToEnd_Stdout(t *testing.T) {
+// newFakeMCPAndAS builds a full fake MCP + authorization server pair
+// implementing the whole discovery + register + device_authorization +
+// (one authorization_pending, then approve) chain, with certs trusted for
+// the duration of the test. token is the access_token the /token endpoint
+// eventually returns.
+func newFakeMCPAndAS(t *testing.T, token string) (mcpURL string) {
+	t.Helper()
 	mcpMux := http.NewServeMux()
 	mcpSrv := httptest.NewTLSServer(mcpMux)
-	defer mcpSrv.Close()
+	t.Cleanup(mcpSrv.Close)
 	asMux := http.NewServeMux()
 	asSrv := httptest.NewTLSServer(asMux)
-	defer asSrv.Close()
+	t.Cleanup(asSrv.Close)
 
 	mcpMux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource/mcp"`, mcpSrv.URL))
@@ -111,7 +113,7 @@ func TestRun_EndToEnd_Stdout(t *testing.T) {
 			writeJSONTest(w, map[string]any{"error": "authorization_pending"})
 			return
 		}
-		writeJSONTest(w, map[string]any{"access_token": "test_token_e2e_token", "token_type": "Bearer", "expires_in": 3600, "scope": "context:read"})
+		writeJSONTest(w, map[string]any{"access_token": token, "token_type": "Bearer", "expires_in": 3600, "scope": "context:read"})
 	})
 
 	// The test binary's own default HTTP transport does not trust the fake
@@ -120,11 +122,19 @@ func TestRun_EndToEnd_Stdout(t *testing.T) {
 	// unexported run() -- which builds its own *devicelogin.Client with no
 	// injection point -- ends up trusting them, exactly as a real client
 	// trusts a real CA outside of tests.
-	restore := trustTestCerts(t, mcpSrv, asSrv)
-	defer restore()
+	t.Cleanup(trustTestCerts(t, mcpSrv, asSrv))
+	return mcpSrv.URL + "/mcp"
+}
+
+// TestRun_EndToEnd_Stdout exercises the whole path against a fake
+// authorization server, using --client stdout so the outcome can be
+// asserted without touching a real client config: discover, register,
+// start, poll through one authorization_pending, then approve.
+func TestRun_EndToEnd_Stdout(t *testing.T) {
+	mcpURL := newFakeMCPAndAS(t, "test_token_e2e_token")
 
 	var out, errOut bytes.Buffer
-	code := run([]string{"--client", "stdout", "--mcp-url", mcpSrv.URL + "/mcp", "--timeout", "8s"}, &out, &errOut)
+	code := run([]string{"--client", "stdout", "--mcp-url", mcpURL, "--timeout", "8s"}, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", code, errOut.String())
 	}
@@ -133,6 +143,26 @@ func TestRun_EndToEnd_Stdout(t *testing.T) {
 	}
 	if strings.Contains(errOut.String(), "test_token_e2e_token") {
 		t.Error("the token must never appear on stderr")
+	}
+}
+
+// TestRun_EndToEnd_StdoutSucceedsWithoutHomeOrXDG is cf-6235-r2 finding 4:
+// --client stdout writes no file at all, so it must succeed even on a
+// headless/CI box with neither $HOME nor $XDG_CONFIG_HOME set -- the
+// previous code resolved StateDir() unconditionally before Write, failing
+// AFTER a real browser approval over a directory stdout mode never uses.
+func TestRun_EndToEnd_StdoutSucceedsWithoutHomeOrXDG(t *testing.T) {
+	mcpURL := newFakeMCPAndAS(t, "test_token_no_home")
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	var out, errOut bytes.Buffer
+	code := run([]string{"--client", "stdout", "--mcp-url", mcpURL, "--timeout", "8s"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", code, errOut.String())
+	}
+	if got := strings.TrimSpace(out.String()); got != "test_token_no_home" {
+		t.Errorf("stdout = %q, want the bare token", got)
 	}
 }
 

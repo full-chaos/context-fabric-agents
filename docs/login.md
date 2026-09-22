@@ -36,6 +36,7 @@ login --client <codex|claude-code|env|stdout> [--mcp-url URL] [--scope "s1 s2"] 
 | `--mcp-url` | `https://mcp.fullchaos.dev/mcp` | The hosted MCP endpoint to sign in to. |
 | `--scope` | `context:read evidence:read` | Space-separated OAuth scopes to request. |
 | `--timeout` | `15m` | Give up waiting for approval after this long (also bounded by the server's own device-code expiry — `login` never polls past either). |
+| `--insecure-loopback` | off | Allow `http://` (never `https://`) for `--mcp-url` and every discovered endpoint, and only on a loopback host (`127.0.0.1`/`::1`/`localhost`) — for pointing `login` at a local dev server. Every other `http://` target is refused: a bearer token is never sent over plain HTTP. |
 
 Run it, then:
 

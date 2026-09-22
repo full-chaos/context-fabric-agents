@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -39,6 +40,48 @@ type Discovery struct {
 // liveness/internal/l3's probe client) when left nil.
 type Client struct {
 	HTTPClient *http.Client
+	// InsecureLoopback allows http:// (instead of https://) for the target
+	// --mcp-url and every URL the discovery chain resolves, but ONLY when
+	// that URL's host is a loopback address (127.0.0.0/8, ::1, or the
+	// literal "localhost") -- for pointing the helper at a local dev
+	// server. Every other http:// URL is refused: a bearer token must
+	// never be sent, or a client wired to receive one, over cleartext.
+	InsecureLoopback bool
+}
+
+// requireSecure refuses rawURL unless it is https, or (when
+// insecureLoopback is set) http on a loopback host. what names the URL's
+// role in the error message (e.g. "--mcp-url", "resource_metadata").
+func requireSecure(rawURL, what string, insecureLoopback bool) (*url.URL, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" || u.Scheme == "" {
+		return nil, fmt.Errorf("invalid %s %q", what, rawURL)
+	}
+	if u.Scheme == "https" {
+		return u, nil
+	}
+	if u.Scheme == "http" && insecureLoopback && isLoopbackHost(u.Host) {
+		return u, nil
+	}
+	if u.Scheme == "http" && isLoopbackHost(u.Host) {
+		return nil, fmt.Errorf("%s %q is http on loopback; pass --insecure-loopback to allow this for local testing", what, rawURL)
+	}
+	return nil, fmt.Errorf("%s %q must be https (a bearer token is never sent over plain http)", what, rawURL)
+}
+
+// isLoopbackHost reports whether host (a URL's Host, which may carry a
+// port) names 127.0.0.0/8, ::1, or the literal hostname "localhost".
+func isLoopbackHost(host string) bool {
+	h := host
+	if hh, _, err := net.SplitHostPort(host); err == nil {
+		h = hh
+	}
+	h = strings.Trim(h, "[]")
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (c *Client) httpClient() *http.Client {
@@ -99,9 +142,9 @@ func drain(resp *http.Response) {
 // that document naming an authorization server, and that server's own
 // RFC 8414 metadata. It never sends a credential.
 func (c *Client) Discover(ctx context.Context, mcpURL string) (*Discovery, error) {
-	u, err := url.Parse(mcpURL)
-	if err != nil || u.Host == "" || u.Scheme == "" {
-		return nil, fmt.Errorf("invalid --mcp-url %q", mcpURL)
+	u, err := requireSecure(mcpURL, "--mcp-url", c.InsecureLoopback)
+	if err != nil {
+		return nil, err
 	}
 	client := c.httpClient()
 
@@ -127,8 +170,12 @@ func (c *Client) Discover(ctx context.Context, mcpURL string) (*Discovery, error
 	if !ok {
 		return nil, errors.New("401 challenge has no resource_metadata parameter")
 	}
-	if p, err := url.Parse(rmURL); err != nil || p.Scheme != "https" || p.Host != u.Host {
-		return nil, fmt.Errorf("resource_metadata %q is not an https URL on %s", rmURL, u.Host)
+	p, err := requireSecure(rmURL, "resource_metadata", c.InsecureLoopback)
+	if err != nil {
+		return nil, err
+	}
+	if p.Host != u.Host {
+		return nil, fmt.Errorf("resource_metadata %q is not on %s", rmURL, u.Host)
 	}
 
 	var prm protectedResourceMetadata
@@ -139,6 +186,9 @@ func (c *Client) Discover(ctx context.Context, mcpURL string) (*Discovery, error
 		return nil, errors.New("protected-resource metadata has no authorization_servers")
 	}
 	issuer := prm.AuthorizationServers[0]
+	if _, err := requireSecure(issuer, "authorization_servers[0]", c.InsecureLoopback); err != nil {
+		return nil, err
+	}
 
 	asURL := strings.TrimRight(issuer, "/") + "/.well-known/oauth-authorization-server"
 	var asMeta authorizationServerMetadata
@@ -150,6 +200,17 @@ func (c *Client) Discover(ctx context.Context, mcpURL string) (*Discovery, error
 	}
 	if strings.TrimSpace(asMeta.TokenEndpoint) == "" {
 		return nil, fmt.Errorf("authorization server %s does not advertise token_endpoint", issuer)
+	}
+	if _, err := requireSecure(asMeta.DeviceAuthorizationEndpoint, "device_authorization_endpoint", c.InsecureLoopback); err != nil {
+		return nil, err
+	}
+	if _, err := requireSecure(asMeta.TokenEndpoint, "token_endpoint", c.InsecureLoopback); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(asMeta.RegistrationEndpoint) != "" {
+		if _, err := requireSecure(asMeta.RegistrationEndpoint, "registration_endpoint", c.InsecureLoopback); err != nil {
+			return nil, err
+		}
 	}
 	return &Discovery{
 		Issuer:                      asMeta.Issuer,
@@ -209,7 +270,12 @@ func (c *Client) Register(ctx context.Context, registrationEndpoint, clientName 
 	}
 	defer drain(resp)
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("registration returned %d, want 200 or 201", resp.StatusCode)
+		var e oauthErrorCode
+		_ = json.NewDecoder(resp.Body).Decode(&e)
+		if e.Error == "" {
+			e.Error = fmt.Sprintf("registration returned %d, want 200 or 201", resp.StatusCode)
+		}
+		return "", &APIError{Code: e.Error, Description: e.ErrorDescription, RetryAfter: retryAfter(resp)}
 	}
 	var out struct {
 		ClientID string `json:"client_id"`
