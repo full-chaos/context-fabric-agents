@@ -3,7 +3,7 @@
   "clients": {
     "claude-code": {
       "expected_method": "server/discover",
-      "expected_revision": "2026-07-28",
+      "expected_revision": "2025-06-18",
       "pinned_version": "2.1.278",
       "status": "confirmed"
     },
