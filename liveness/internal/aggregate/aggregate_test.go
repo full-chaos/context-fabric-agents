@@ -12,7 +12,8 @@ import (
 const legsJSON = `{
   "schema_version": "cfa.liveness.legs.v1",
   "legs": [
-    {"id": "l1", "mode": "live", "description": "probe", "job": "l1", "required_steps": ["a", "b"]},
+    {"id": "l1", "mode": "live", "description": "probe", "workflow": "liveness.yml", "job": "l1", "required_steps": ["a", "b"]},
+    {"id": "l2-codex", "mode": "live", "description": "codex connect", "workflow": "liveness-l2.yml", "job": "l2-codex", "required_steps": ["a"]},
     {"id": "cursor", "mode": "static-only", "description": "config parse only"},
     {"id": "l1-trial", "mode": "declared-off", "description": "trial", "reason": "behind Access", "issue": "https://linear.app/fullchaos/issue/CHAOS-1"}
   ]
@@ -61,7 +62,7 @@ func dirWith(t *testing.T, files map[string]string) string {
 var ok = map[string]Need{"l1": {Result: "success"}}
 
 func TestGreen(t *testing.T) {
-	rep := Run(legs(t), ok, dirWith(t, map[string]string{"l1.json": passJSON}))
+	rep := Run(legs(t), "liveness.yml", ok, dirWith(t, map[string]string{"l1.json": passJSON}))
 	if !rep.Green() {
 		t.Fatalf("problems: %v", rep.Problems)
 	}
@@ -86,6 +87,8 @@ func TestRed(t *testing.T) {
 		"no result file":            {ok, map[string]string{}, "no result file l1.json"},
 		"undeclared job":            {map[string]Need{"l1": {Result: "success"}, "l9": {Result: "success"}}, map[string]string{"l1.json": passJSON}, `job "l9" is not declared`},
 		"extra result file":         {ok, map[string]string{"l1.json": passJSON, "l2.json": passJSON}, `unexpected file "l2.json"`},
+		"result for other workflow": {ok, map[string]string{"l1.json": passJSON, "l2-codex.json": passJSON}, `unexpected file "l2-codex.json"`},
+		"job of other workflow":     {map[string]Need{"l1": {Result: "success"}, "l2-codex": {Result: "success"}}, map[string]string{"l1.json": passJSON}, `job "l2-codex" is not declared as a live leg of liveness.yml`},
 		"result for static leg":     {ok, map[string]string{"l1.json": passJSON, "cursor.json": passJSON}, `unexpected file "cursor.json"`},
 		"stray subdirectory":        {ok, map[string]string{"l1.json": passJSON, "nested/": ""}, `unexpected file "nested/"`},
 		"malformed json":            {ok, map[string]string{"l1.json": "{not json"}, "malformed l1.json"},
@@ -99,7 +102,7 @@ func TestRed(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			rep := Run(legs(t), tc.needs, dirWith(t, tc.files))
+			rep := Run(legs(t), "liveness.yml", tc.needs, dirWith(t, tc.files))
 			if rep.Green() {
 				t.Fatal("run is green; want red")
 			}
@@ -113,8 +116,44 @@ func TestRed(t *testing.T) {
 	}
 }
 
+func TestOtherWorkflowLegIsListedNotJudged(t *testing.T) {
+	rep := Run(legs(t), "liveness.yml", ok, dirWith(t, map[string]string{"l1.json": passJSON}))
+	if !rep.Green() {
+		t.Fatalf("problems: %v", rep.Problems)
+	}
+	if !strings.Contains(rep.Markdown(), "| l2-codex | live | l2-codex | - | - | - | judged by liveness-l2.yml |") {
+		t.Errorf("summary lacks the other-workflow row:\n%s", rep.Markdown())
+	}
+}
+
+func TestSecondWorkflowJudgesItsOwnLegs(t *testing.T) {
+	l2pass := strings.NewReplacer(`"leg": "l1"`, `"leg": "l2-codex"`, `, {"id": "b", "status": "pass", "detail": "ok"}`, "").Replace(passJSON)
+	needs := map[string]Need{"l2-codex": {Result: "success"}}
+	rep := Run(legs(t), "liveness-l2.yml", needs, dirWith(t, map[string]string{"l2-codex.json": l2pass}))
+	if !rep.Green() {
+		t.Fatalf("problems: %v", rep.Problems)
+	}
+	// The L1 leg is not required by the L2 workflow, and its result is foreign there.
+	rep = Run(legs(t), "liveness-l2.yml", needs, dirWith(t, map[string]string{"l2-codex.json": l2pass, "l1.json": passJSON}))
+	if rep.Green() || !strings.Contains(strings.Join(rep.Problems, "\n"), `unexpected file "l1.json"`) {
+		t.Fatalf("foreign l1.json accepted by the L2 workflow: %v", rep.Problems)
+	}
+	// Leg removed from the L2 workflow while declared live: red.
+	rep = Run(legs(t), "liveness-l2.yml", map[string]Need{}, dirWith(t, map[string]string{"l2-codex.json": l2pass}))
+	if rep.Green() || !strings.Contains(strings.Join(rep.Problems, "\n"), `job "l2-codex" is not in the workflow's needs`) {
+		t.Fatalf("removed L2 leg not red: %v", rep.Problems)
+	}
+}
+
+func TestWorkflowWithoutLiveLegsIsRed(t *testing.T) {
+	rep := Run(legs(t), "nope.yml", map[string]Need{}, t.TempDir())
+	if rep.Green() {
+		t.Fatal("a workflow that judges no live leg read as green")
+	}
+}
+
 func TestMissingResultsDirIsRed(t *testing.T) {
-	rep := Run(legs(t), ok, filepath.Join(t.TempDir(), "absent"))
+	rep := Run(legs(t), "liveness.yml", ok, filepath.Join(t.TempDir(), "absent"))
 	if rep.Green() {
 		t.Fatal("missing results directory read as green")
 	}

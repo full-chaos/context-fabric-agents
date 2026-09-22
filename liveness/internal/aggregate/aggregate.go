@@ -48,14 +48,18 @@ func ParseNeeds(data string) (map[string]Need, error) {
 	return n, nil
 }
 
-// Run checks the legs against the job results and the results directory.
-func Run(legs *record.Legs, needs map[string]Need, resultsDir string) *Report {
+// Run checks the live legs that workflow judges against the job results and
+// the results directory. Live legs of another workflow are listed, not judged.
+func Run(legs *record.Legs, workflow string, needs map[string]Need, resultsDir string) *Report {
 	rep := &Report{}
 	problem := func(format string, a ...any) { rep.Problems = append(rep.Problems, fmt.Sprintf(format, a...)) }
 
 	liveJobs := map[string]bool{}
 	expectedFiles := map[string]string{}
-	for _, g := range legs.Live() {
+	if len(legs.LiveIn(workflow)) == 0 {
+		problem("workflow %q judges no live leg in legs.json", workflow)
+	}
+	for _, g := range legs.LiveIn(workflow) {
 		liveJobs[g.Job] = true
 		expectedFiles[record.ResultFile(g.ID)] = g.ID
 	}
@@ -66,7 +70,7 @@ func Run(legs *record.Legs, needs map[string]Need, resultsDir string) *Report {
 	sort.Strings(jobs)
 	for _, j := range jobs {
 		if !liveJobs[j] {
-			problem("job %q is not declared as a live leg in legs.json", j)
+			problem("job %q is not declared as a live leg of %s in legs.json", j, workflow)
 		}
 	}
 
@@ -92,6 +96,10 @@ func Run(legs *record.Legs, needs map[string]Need, resultsDir string) *Report {
 		case record.ModeDeclaredOff:
 			row.Notes = g.Reason + " (" + g.Issue + ")"
 		case record.ModeLive:
+			if g.Workflow != workflow {
+				row.Notes = "judged by " + g.Workflow
+				break
+			}
 			checkLive(g, needs, has[record.ResultFile(g.ID)], resultsDir, &row, problem)
 		}
 		rep.Rows = append(rep.Rows, row)

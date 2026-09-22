@@ -6,7 +6,7 @@
   "packageRules": [
     {
       "description": "Pinned agent client CLIs used by liveness legs (added in CHAOS-6205). A new version is always a reviewed PR.",
-      "matchPackageNames": ["@anthropic-ai/claude-code", "@openai/codex", "opencode-ai"],
+      "matchPackageNames": ["@anthropic-ai/claude-code", "@openai/codex", "opencode-ai", "@opencode/cli"],
       "groupName": "agent client pins",
       "automerge": false
     }
