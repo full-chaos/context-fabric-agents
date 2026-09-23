@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-21T20:47:11Z",
+  "captured_at": "2026-09-23T10:01:34Z",
   "host": "mcp.fullchaos.dev",
   "negotiations": [
     {
@@ -88,7 +88,7 @@
   "server_info": {
     "name": "dev-health-acr-mcp",
     "title": "Dev Health ACR",
-    "version": "0.1.1-main.d753211fa980fcba497ba280bd5a37033d21fd70"
+    "version": "0.1.1-main.c1f947b50017e52dcebfa7e95d4604d2e3f0941a"
   },
   "tools": [
     {
