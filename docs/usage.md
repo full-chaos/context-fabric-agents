@@ -13,7 +13,7 @@ Every call names what it needs explicitly.
 `context_for_task` needs `repository.slug` (`owner/name`) in every call:
 
 ```json
-{"goal": "Add repository-scoped ACR credentials", "repository": {"slug": "full-chaos/dev-health-acr"}}
+{"goal": "Add repository-scoped ACR credentials", "repository": {"slug": "full-chaos/context-fabric-agents"}}
 ```
 
 A call without a repository gets a typed `validation` refusal that names
