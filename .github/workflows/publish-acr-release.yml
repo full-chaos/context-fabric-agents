@@ -1,19 +1,17 @@
 name: publish-acr-release
 
-# CHAOS-6211 / CHAOS-6234: mirrors ONLY the acr-mcp release assets (binaries,
-# per-product SBOMs/trivy scans) plus the renamed SHA256SUMS + sigstore
-# bundle from the private full-chaos/dev-health-acr repo into a public
-# Release on THIS repo, so the STDIO binary stays reachable once acr goes
-# private. acr-api is NOT a public deliverable (chris, 2026-09-22: "acr-api
-# isn't meant to be public, only the MCP for stdio") -- acr-api archives,
-# per-product SBOMs/trivy files, and the repo-wide release-manifest.json /
-# container-release-manifest.json / trivy-db-* files (which name acr-api)
-# are downloaded (needed to verify the signed SHA256SUMS covers the whole
-# acr release) but never staged for publish. SHA256SUMS + its sigstore
-# bundle ARE republished whole and unmodified -- cosign's signature covers
-# the exact bytes of that file, so filtering it would invalidate the
-# signature; it lists acr-api's checksums too, but a checksum is not the
-# binary and cannot reconstruct it, so this does not make acr-api public.
+# CHAOS-6211 / CHAOS-6234 / CHAOS-6236: mirrors ONLY the acr-mcp release
+# assets (binaries, per-product SBOMs/trivy scans) plus acr's OWN signed
+# per-product manifest, acr-mcp-SHA256SUMS and its cosign bundle
+# acr-mcp-SHA256SUMS.sigstore.json, from the private full-chaos/dev-health-acr
+# repo into a public Release on THIS repo, so the STDIO binary stays reachable
+# once acr goes private. acr-api is NOT a public deliverable (chris,
+# 2026-09-22: "acr-api isn't meant to be public, only the MCP for stdio"):
+# only acr-mcp* files are ever downloaded, so acr-api bytes and names never
+# reach this repo. acr's release signs a manifest per product; the mirror
+# republishes acr-mcp-SHA256SUMS and its bundle byte-for-byte under the same
+# names, so a verifier checks acr's ORIGINAL signature -- nothing is
+# re-derived, filtered or re-signed here. It lists acr-mcp files only.
 #
 # Design (fewest new secrets): this workflow reads FROM acr using a single
 # read-only secret (ACR_RELEASE_READ_TOKEN, Contents: Read on
@@ -27,7 +25,7 @@ name: publish-acr-release
 # secret count (one either way).
 #
 # Independent re-verification, not a blind copy: after download this job
-# re-runs cosign verify-blob against acr's own SHA256SUMS + sigstore bundle,
+# re-runs cosign verify-blob against acr's own acr-mcp-SHA256SUMS + bundle,
 # checked against acr release.yml's signer identity
 # (github.com/full-chaos/dev-health-acr/.github/workflows/release.yml@refs/
 # {heads/main,tags/vX.Y.Z}), and re-checks every asset's sha256 before
@@ -186,9 +184,12 @@ jobs:
             exit 1
           fi
           mkdir -p acr-dist
-          gh release download "$ACR_TAG" --repo "$ACR_REPO" --dir acr-dist
-          test -f acr-dist/SHA256SUMS || { echo "::error::acr release is missing SHA256SUMS"; exit 1; }
-          test -f acr-dist/SHA256SUMS.sigstore.json || { echo "::error::acr release is missing SHA256SUMS.sigstore.json"; exit 1; }
+          # Only acr-mcp files: acr-mcp_* archives/SBOMs, acr-mcp-<arch>-*
+          # scans and acr-mcp-SHA256SUMS(.sigstore.json) all match. acr-api
+          # files (private) are never fetched.
+          gh release download "$ACR_TAG" --repo "$ACR_REPO" --dir acr-dist --pattern 'acr-mcp*'
+          test -f acr-dist/acr-mcp-SHA256SUMS || { echo "::error::acr release ${ACR_TAG} has no acr-mcp-SHA256SUMS (a release cut before CHAOS-6236 carries only the combined manifest; pin a newer acr release)"; exit 1; }
+          test -f acr-dist/acr-mcp-SHA256SUMS.sigstore.json || { echo "::error::acr release is missing acr-mcp-SHA256SUMS.sigstore.json"; exit 1; }
 
       - name: Install cosign v2.6.5 (SHA-256 pinned; GitHub-owned Actions allow-list only)
         if: steps.tags.outputs.proceed == 'true'
@@ -206,20 +207,27 @@ jobs:
         if: steps.tags.outputs.proceed == 'true'
         run: |
           set -euo pipefail
-          cosign verify-blob acr-dist/SHA256SUMS \
-            --bundle acr-dist/SHA256SUMS.sigstore.json \
+          cosign verify-blob acr-dist/acr-mcp-SHA256SUMS \
+            --bundle acr-dist/acr-mcp-SHA256SUMS.sigstore.json \
             --certificate-identity-regexp "$ACR_SIGNER_IDENTITY_REGEXP" \
             --certificate-oidc-issuer "$ACR_OIDC_ISSUER"
-          (cd acr-dist && sha256sum --check SHA256SUMS)
+          (cd acr-dist && sha256sum --check acr-mcp-SHA256SUMS)
 
-          # Every downloaded file must be EITHER SHA256SUMS/its sigstore bundle
-          # OR a file the (now signature-verified) SHA256SUMS itself lists --
+          # The manifest is acr-mcp-only by construction; refuse anything
+          # else so a release-side regression cannot leak acr-api names.
+          if grep -aq 'acr-api' acr-dist/acr-mcp-SHA256SUMS; then
+            echo "::error::acr-mcp-SHA256SUMS references acr-api -- refusing to publish"
+            exit 1
+          fi
+
+          # Every downloaded file must be EITHER the manifest/its bundle
+          # OR a file the (now signature-verified) manifest itself lists --
           # sha256sum --check only proves the listed files are correct, it
           # says nothing about an EXTRA, unlisted file riding along in the
           # same download. Assert the file SET matches exactly, both ways.
           (
             cd acr-dist
-            { printf '%s\n' SHA256SUMS SHA256SUMS.sigstore.json; awk '{print $2}' SHA256SUMS; } \
+            { printf '%s\n' acr-mcp-SHA256SUMS acr-mcp-SHA256SUMS.sigstore.json; awk '{print $2}' acr-mcp-SHA256SUMS; } \
               | LC_ALL=C sort -u > /tmp/expected-assets
             find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > /tmp/actual-assets
             if ! cmp -s /tmp/expected-assets /tmp/actual-assets; then
@@ -247,26 +255,12 @@ jobs:
       - name: Stage published copies under collision-safe names
         if: steps.tags.outputs.proceed == 'true'
         # cfa's own release.yml already publishes a file literally named
-        # SHA256SUMS (covering ITS OWN client tarballs) into the SAME
-        # GitHub Release this workflow uploads into. `gh release upload
-        # --clobber` on an unrenamed SHA256SUMS would overwrite cfa's own
-        # checksum manifest with acr's, invalidating verification of cfa's
-        # own tarballs (codex round cf-6211-r2, executed repro). Publish
-        # under acr-mcp-prefixed names instead; the verification steps
-        # above already ran against the original acr-dist/ names, so
-        # renaming a COPY at this point does not weaken anything they
-        # already proved (cosign verifies content, not filename).
-        #
-        # CHAOS-6234: only acr-mcp-named files (both the per-archive
-        # `acr-mcp_<version>_<os>_<arch>.*` scheme and the per-image
-        # `acr-mcp-<arch>-{trivy,spdx}.json` scheme) plus the renamed
-        # SHA256SUMS/sigstore bundle are staged. acr-api_*/acr-api-* files
-        # and the repo-wide release-manifest.json, container-release-
-        # manifest.json, trivy-db-metadata.json, trivy-db-snapshot.txt
-        # (all of which name acr-api and are not required by any public
-        # install/verify doc -- those use the archive + SHA256SUMS +
-        # cosign signature only) are downloaded for verification above but
-        # deliberately never copied into acr-publish/.
+        # SHA256SUMS (covering ITS OWN client tarballs) into the SAME GitHub
+        # Release this workflow uploads into. acr's per-product manifest is
+        # already named acr-mcp-SHA256SUMS, so it cannot collide, and it is
+        # published UNRENAMED and unmodified: the bytes cosign signed are the
+        # bytes published (CHAOS-6236). Every file that reaches this step is an
+        # acr-mcp* file (the download is pattern-scoped); the loop only copies.
         run: |
           set -euo pipefail
           rm -rf acr-publish
@@ -274,13 +268,13 @@ jobs:
           for f in acr-dist/*; do
             name="$(basename "$f")"
             case "$name" in
-              SHA256SUMS) cp "$f" "acr-publish/acr-mcp-SHA256SUMS" ;;
-              SHA256SUMS.sigstore.json) cp "$f" "acr-publish/acr-mcp-SHA256SUMS.sigstore.json" ;;
               acr-mcp_*|acr-mcp-*) cp "$f" "acr-publish/$name" ;;
-              *) echo "not publishing (not an acr-mcp asset): $name" ;;
+              *) echo "::error::unexpected file in acr-dist: $name"; exit 1 ;;
             esac
           done
           echo "staged $(find acr-publish -maxdepth 1 -type f | wc -l) file(s) for publish"
+          cmp acr-dist/acr-mcp-SHA256SUMS acr-publish/acr-mcp-SHA256SUMS
+          cmp acr-dist/acr-mcp-SHA256SUMS.sigstore.json acr-publish/acr-mcp-SHA256SUMS.sigstore.json
           if compgen -G 'acr-publish/acr-api*' >/dev/null; then
             echo "::error::an acr-api asset made it into acr-publish/ -- refusing to publish"
             exit 1
@@ -297,10 +291,9 @@ jobs:
           #
           # SCOPE, corrected after r2's P1 (executed repro: a blanket check
           # over every staged file self-refuses EVERY publish, because the
-          # renamed SHA256SUMS is INTENTIONALLY the whole signed manifest and
-          # legitimately lists acr-api's checksummed filenames by name -- see
-          # the "SCOPE OF ANY BUILD..." note above on why that file stays
-          # whole). This check therefore applies ONLY to the small per-image/
+          # combined SHA256SUMS listed acr-api's checksummed filenames; the
+          # per-product manifest no longer does, and is checked separately
+          # above). This check therefore applies ONLY to the small per-image/
           # per-archive JSON metadata files (*.spdx.json / *-trivy.json),
           # which is exactly the file class r1's fixture attacked and which
           # measured zero real "acr-api" mentions across a full real acr
@@ -334,7 +327,7 @@ jobs:
           PRERELEASE: ${{ steps.tags.outputs.prerelease }}
         run: |
           set -euo pipefail
-          notes="Mirrors acr-mcp release assets (only -- acr-api is not a public deliverable) from full-chaos/dev-health-acr@${ACR_TAG}, re-verified by this workflow (cosign + SHA256SUMS) before publication. Checksum/sigstore files are published as acr-mcp-SHA256SUMS / acr-mcp-SHA256SUMS.sigstore.json to avoid colliding with this repo's own release assets of the same generic name; they cover the full acr release (both products) because that is what acr's signature was made over, but only the acr-mcp binaries themselves are republished here. Verify the ONE line matching your downloaded asset (awk/grep the filename out of the manifest, per the install docs) -- a whole-file batch check (e.g. bare 'sha256sum -c acr-mcp-SHA256SUMS') will report the omitted acr-api entries as missing; that is expected, not an error."
+          notes="Mirrors acr-mcp release assets (only -- acr-api is not a public deliverable) from full-chaos/dev-health-acr@${ACR_TAG}, re-verified by this workflow (cosign + checksums) before publication. acr-mcp-SHA256SUMS and acr-mcp-SHA256SUMS.sigstore.json are acr's own signed per-product manifest and bundle, published unmodified; they list acr-mcp files only, and this repo's own SHA256SUMS covers its own tarballs."
           if gh release view "$CFA_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$CFA_TAG" acr-publish/* --repo "${{ github.repository }}" --clobber
           else
