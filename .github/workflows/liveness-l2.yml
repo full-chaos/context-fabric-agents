@@ -23,19 +23,9 @@ on:
   schedule:
     - cron: '11 3-21/6 * * *'
   workflow_dispatch:
-  # Same-repo PRs that change a leg's inputs run the matrix too (fork PRs get
-  # no secret: every job is skipped there). A red PR run does not open the
-  # liveness-failure issue.
-  pull_request:
-    paths:
-      - 'liveness/**'
-      - 'ci/**'
-      - 'contracts/acr-mcp/compat.json'
-      - 'plugins/configs/claude-code.bearer.mcp.json'
-      - 'codex/configs/config.bearer.toml'
-      - 'codex/proof/**'
-      - 'opencode/configs/opencode-v2.bearer.json'
-      - '.github/workflows/liveness-l2.yml'
+  # CHAOS-6544: no pull_request trigger. This matrix connects real clients to
+  # the production host through the loopback proxy; only the schedule and an
+  # explicit dispatch may do that. PR and push checks use ci/local-acr.
 
 permissions: {}
 
