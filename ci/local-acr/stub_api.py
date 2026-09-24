@@ -11,13 +11,25 @@ and never logs a header.
 """
 import http.client
 import json
-import re
 import ssl
 import sys
 import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 
+PROXIED_PATHS = {
+    "/mcp": "/mcp",
+    "/.well-known/oauth-protected-resource": "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource/mcp": "/.well-known/oauth-protected-resource/mcp",
+}
+FORWARDED_HEADERS = {
+    "content-type": "Content-Type",
+    "www-authenticate": "WWW-Authenticate",
+    "cache-control": "Cache-Control",
+    "mcp-session-id": "Mcp-Session-Id",
+    "mcp-protocol-version": "Mcp-Protocol-Version",
+    "x-request-id": "X-Request-Id",
+}
 CAPS_PATH = "/api/v1/agent-context/capabilities"
 SCHEMAS = [
     "mcp_context_for_task_request.v1", "mcp_context_for_task_response.v1",
@@ -94,9 +106,10 @@ class TLSFront(BaseHTTPRequestHandler):
     def _proxy(self):
         if self.path.startswith(("/.well-known/oauth-authorization-server", "/.well-known/openid-configuration")):
             return self._as_metadata()
-        # Only the MCP endpoint and OAuth discovery documents are proxied; any
-        # other path (or one carrying control characters) is refused.
-        if not re.fullmatch(r"/(mcp|\.well-known/oauth-protected-resource(/mcp)?)", self.path):
+        # Only the MCP endpoint and OAuth discovery documents are proxied. The
+        # upstream path is taken from this constant table, never from the request.
+        upstream_path = PROXIED_PATHS.get(self.path)
+        if upstream_path is None:
             self.send_response(404)
             self.send_header("Connection", "close")
             self.end_headers()
@@ -105,12 +118,12 @@ class TLSFront(BaseHTTPRequestHandler):
         data = self.rfile.read(length) if length else None
         conn = http.client.HTTPConnection("127.0.0.1", TLSFront.upstream_port, timeout=60)
         headers = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "connection")}
-        conn.request(self.command, self.path, body=data, headers=headers)
+        conn.request(self.command, upstream_path, body=data, headers=headers)
         resp = conn.getresponse()
         self.send_response(resp.status)
         for k, v in resp.getheaders():
-            if k.lower() not in ("transfer-encoding", "connection", "content-length") and not re.search(r"[\r\n]", k + v):
-                self.send_header(k, v)
+            if k.lower() in FORWARDED_HEADERS:
+                self.send_header(FORWARDED_HEADERS[k.lower()], v.replace("\r", "").replace("\n", ""))
         self.send_header("Connection", "close")
         self.end_headers()
         while True:
