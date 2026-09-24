@@ -14,7 +14,7 @@ delivery questions and inspect cited evidence — no local server to run.
 
 | Environment | MCP endpoint |
 |---|---|
-| Production | `https://mcp.fullchaos.dev/mcp` |
+| Production | `https://mcp.fullchaos.dev/mcp` (from the next acr deploy `https://mcp.fullchaos.dev` also works; `/mcp` stays valid) |
 | Trial | `https://mcp.commanderkeen.dev/mcp` (Cloudflare Access-gated; not reachable from a plain client) |
 
 ## Supported clients

@@ -4,6 +4,10 @@ Every config in this repo names one URL field. Change that one field to
 point a client at your own deployment instead of
 `https://mcp.fullchaos.dev/mcp`. Nothing else in a config needs to change.
 
+After the next acr deploy the hosted server also answers at the short URL
+`https://mcp.fullchaos.dev`; `/mcp` stays valid, and the configs in this repo
+keep `/mcp` until then.
+
 | Client | File | Field |
 |---|---|---|
 | Claude Code | `.mcp.json` (plugin) or your own config | `mcpServers.dev-health.url` |
