@@ -1,1 +1,1 @@
-claude mcp add --transport http dev-health https://mcp.fullchaos.dev/mcp
+claude mcp add --transport http dev-health https://mcp.fullchaos.dev

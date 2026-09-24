@@ -1,7 +1,7 @@
 # Cursor
 
 Config file for Cursor to use the hosted Dev Health MCP server
-(`https://mcp.fullchaos.dev/mcp`).
+(`https://mcp.fullchaos.dev`).
 
 Rendered and checked by `internal/render` (`go run ./cmd/render -check`).
 Doc sources: [cursor.com/docs/context/mcp](https://cursor.com/docs/context/mcp)
@@ -53,7 +53,7 @@ start Cursor.
 {
   "mcpServers": {
     "dev-health": {
-      "url": "https://mcp.fullchaos.dev/mcp",
+      "url": "https://mcp.fullchaos.dev",
       "headers": {
         "Authorization": "Bearer ${env:ACR_MCP_TOKEN}"
       }

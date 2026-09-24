@@ -28,14 +28,14 @@ OAuth needs a browser. For headless or CI use, add the bearer config directly in
 
 ```
 export ACR_MCP_TOKEN=<your token>      # set BEFORE starting Claude Code
-claude mcp add --transport http dev-health-bearer https://mcp.fullchaos.dev/mcp \
+claude mcp add --transport http dev-health-bearer https://mcp.fullchaos.dev \
   --header 'Authorization: Bearer ${ACR_MCP_TOKEN}'
 ```
 
 (or copy [`configs/claude-code.bearer.mcp.json`](configs/claude-code.bearer.mcp.json) / [`configs/claude-code.bearer.add.txt`](configs/claude-code.bearer.add.txt)). With the variable unset the header carries no valid credential (the exact bytes Claude Code sends are not verified), the server answers HTTP 401 `malformed_bearer`, and Claude Code does not fall back to OAuth when an `Authorization` header is configured:
 
 ```
-dev-health-bearer: https://mcp.fullchaos.dev/mcp (HTTP) - ✘ Failed to connect — Server rejected the configured Authorization header (HTTP 401). ... {"error":"malformed_bearer",...}
+dev-health-bearer: https://mcp.fullchaos.dev (HTTP) - ✘ Failed to connect — Server rejected the configured Authorization header (HTTP 401). ... {"error":"malformed_bearer",...}
 ```
 
 Fix: export a valid token and restart Claude Code. The CI `claude-plugin` workflow proves both states on a clean HOME using this bearer path explicitly (CI has no browser, so it cannot complete the plugin's OAuth default).
@@ -75,7 +75,7 @@ renders exactly the same config; either path connects the same way.
 
 <!-- docparity:plugins/configs/claude-code.bearer.add.txt -->
 ```
-claude mcp add --transport http dev-health https://mcp.fullchaos.dev/mcp --header 'Authorization: Bearer ${ACR_MCP_TOKEN}'
+claude mcp add --transport http dev-health https://mcp.fullchaos.dev --header 'Authorization: Bearer ${ACR_MCP_TOKEN}'
 ```
 
 ## Uninstall

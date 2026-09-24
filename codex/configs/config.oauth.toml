@@ -6,5 +6,5 @@
 # requires trusting the project on first use).
 
 [mcp_servers.dev-health]
-url = "https://mcp.fullchaos.dev/mcp"
+url = "https://mcp.fullchaos.dev"
 enabled = true

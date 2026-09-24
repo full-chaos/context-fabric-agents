@@ -7,6 +7,6 @@
 # scope, requires trusting the project on first use).
 
 [mcp_servers.dev-health]
-url = "https://mcp.fullchaos.dev/mcp"
+url = "https://mcp.fullchaos.dev"
 bearer_token_env_var = "ACR_MCP_TOKEN"
 enabled = true

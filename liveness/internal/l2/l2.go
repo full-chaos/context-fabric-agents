@@ -48,7 +48,7 @@ const (
 
 	// ProdURL is the URL every committed config names. Rendering replaces
 	// exactly this string with the proxy URL.
-	ProdURL = proxy.Upstream + proxy.Path
+	ProdURL = proxy.Upstream
 	// TokenEnv is the variable the committed bearer configs read.
 	TokenEnv = "ACR_MCP_TOKEN"
 )

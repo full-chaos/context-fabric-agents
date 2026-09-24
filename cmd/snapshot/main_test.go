@@ -23,7 +23,7 @@ func TestCaptureWithoutCredentialFails(t *testing.T) {
 }
 
 func TestEndpointIsCompiledProdHost(t *testing.T) {
-	if endpoint != "https://mcp.fullchaos.dev/mcp" {
+	if endpoint != "https://mcp.fullchaos.dev" {
 		t.Fatalf("endpoint = %q", endpoint)
 	}
 	// No flag may override it.

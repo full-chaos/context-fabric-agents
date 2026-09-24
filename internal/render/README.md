@@ -7,7 +7,7 @@ go run ./cmd/render -write   # regenerate every artifact
 go run ./cmd/render -check   # exit 1 on any drift, invalid shape, or ban violation
 ```
 
-Constants: URL `https://mcp.fullchaos.dev/mcp`, server key `dev-health`, token env var `ACR_MCP_TOKEN`. STDIO is out of scope (it stays in acr).
+Constants: URL `https://mcp.fullchaos.dev`, server key `dev-health`, token env var `ACR_MCP_TOKEN`. STDIO is out of scope (it stays in acr).
 
 ## Artifacts
 

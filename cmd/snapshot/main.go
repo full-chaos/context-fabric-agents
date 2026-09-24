@@ -20,7 +20,7 @@ import (
 
 const (
 	// endpoint is the production hosted MCP. It is deliberately not a flag.
-	endpoint = "https://mcp.fullchaos.dev/mcp"
+	endpoint = "https://mcp.fullchaos.dev"
 	// tokenEnv is the only place the credential is read from.
 	tokenEnv = "ACR_MCP_CI_BEARER"
 

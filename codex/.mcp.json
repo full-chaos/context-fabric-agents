@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "dev-health": {
-      "url": "https://mcp.fullchaos.dev/mcp",
+      "url": "https://mcp.fullchaos.dev",
       "enabled": true
     }
   }

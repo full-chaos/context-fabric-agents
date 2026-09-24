@@ -7,7 +7,7 @@ No secret values live here. Names and dates only.
 | Item | Kind | Purpose |
 | --- | --- | --- |
 | `ACR_MCP_CI_BEARER` | Actions secret | Bearer for the hosted MCP (`context:read`, `evidence:read`, one repository grant, 90-day expiry) |
-| `ACR_MCP_URL` | Actions variable | `https://mcp.fullchaos.dev/mcp` |
+| `ACR_MCP_URL` | Actions variable | `https://mcp.fullchaos.dev` |
 | `ACR_MCP_TRIAL_URL` | Actions variable | `https://mcp.commanderkeen.dev/mcp` |
 | `GH_CI_TOKEN` | Actions secret | GitHub token for CI jobs that need the GitHub API |
 

@@ -9,7 +9,7 @@ change. Nothing else does.
 | | Old (acr examples) | New (this repo) |
 |---|---|---|
 | Server key | `acr` | `dev-health` |
-| URL | placeholder `https://acr-mcp.dev-health.example.com/mcp` | `https://mcp.fullchaos.dev/mcp` |
+| URL | placeholder `https://acr-mcp.dev-health.example.com/mcp` | `https://mcp.fullchaos.dev` |
 | Token env var | `ACR_MCP_TOKEN` | `ACR_MCP_TOKEN` (unchanged) |
 
 ## What to do
@@ -18,7 +18,7 @@ change. Nothing else does.
    file and field per client).
 2. Rename the server key from `acr` to `dev-health`.
 3. If the URL still reads the acr placeholder, point it at
-   `https://mcp.fullchaos.dev/mcp` (or your own deployment).
+   `https://mcp.fullchaos.dev` (or your own deployment).
 4. Keep `ACR_MCP_TOKEN` set exactly as before. The token itself does not
    change.
 5. Re-verify with your client's own command — see the "Verify" section in

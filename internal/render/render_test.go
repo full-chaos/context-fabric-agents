@@ -79,7 +79,7 @@ func TestArtifactSetIsComplete(t *testing.T) {
 
 // TestConstants pins the identifiers the ticket fixes.
 func TestConstants(t *testing.T) {
-	if RemoteURL != "https://mcp.fullchaos.dev/mcp" || ServerName != "dev-health" || TokenEnvVar != "ACR_MCP_TOKEN" {
+	if RemoteURL != "https://mcp.fullchaos.dev" || ServerName != "dev-health" || TokenEnvVar != "ACR_MCP_TOKEN" {
 		t.Fatalf("constants drifted: %q %q %q", RemoteURL, ServerName, TokenEnvVar)
 	}
 }
@@ -109,7 +109,7 @@ func TestGoldenLiterals(t *testing.T) {
   "mcpServers": {
     "dev-health": {
       "type": "http",
-      "url": "https://mcp.fullchaos.dev/mcp",
+      "url": "https://mcp.fullchaos.dev",
       "headers": {
         "Authorization": "Bearer ${ACR_MCP_TOKEN}"
       }
@@ -121,17 +121,17 @@ func TestGoldenLiterals(t *testing.T) {
   "mcpServers": {
     "dev-health": {
       "type": "http",
-      "url": "https://mcp.fullchaos.dev/mcp"
+      "url": "https://mcp.fullchaos.dev"
     }
   }
 }
 `,
-		"plugins/configs/claude-code.bearer.add.txt": "claude mcp add --transport http dev-health https://mcp.fullchaos.dev/mcp --header 'Authorization: Bearer ${ACR_MCP_TOKEN}'\n",
-		"plugins/configs/claude-code.oauth.add.txt":  "claude mcp add --transport http dev-health https://mcp.fullchaos.dev/mcp\n",
+		"plugins/configs/claude-code.bearer.add.txt": "claude mcp add --transport http dev-health https://mcp.fullchaos.dev --header 'Authorization: Bearer ${ACR_MCP_TOKEN}'\n",
+		"plugins/configs/claude-code.oauth.add.txt":  "claude mcp add --transport http dev-health https://mcp.fullchaos.dev\n",
 		"cursor/configs/mcp.bearer.json": `{
   "mcpServers": {
     "dev-health": {
-      "url": "https://mcp.fullchaos.dev/mcp",
+      "url": "https://mcp.fullchaos.dev",
       "headers": {
         "Authorization": "Bearer ${env:ACR_MCP_TOKEN}"
       }
@@ -144,7 +144,7 @@ func TestGoldenLiterals(t *testing.T) {
   "mcp": {
     "dev-health": {
       "type": "remote",
-      "url": "https://mcp.fullchaos.dev/mcp",
+      "url": "https://mcp.fullchaos.dev",
       "enabled": true,
       "oauth": false,
       "headers": {
@@ -159,7 +159,7 @@ func TestGoldenLiterals(t *testing.T) {
     "servers": {
       "dev-health": {
         "type": "remote",
-        "url": "https://mcp.fullchaos.dev/mcp",
+        "url": "https://mcp.fullchaos.dev",
         "oauth": false,
         "protocol": "auto",
         "headers": {
@@ -174,7 +174,7 @@ func TestGoldenLiterals(t *testing.T) {
   "servers": {
     "dev-health": {
       "type": "http",
-      "url": "https://mcp.fullchaos.dev/mcp"
+      "url": "https://mcp.fullchaos.dev"
     }
   }
 }
@@ -188,7 +188,7 @@ func TestGoldenLiterals(t *testing.T) {
 # scope, requires trusting the project on first use).
 
 [mcp_servers.dev-health]
-url = "https://mcp.fullchaos.dev/mcp"
+url = "https://mcp.fullchaos.dev"
 bearer_token_env_var = "ACR_MCP_TOKEN"
 enabled = true
 `,
@@ -200,7 +200,7 @@ enabled = true
 # requires trusting the project on first use).
 
 [mcp_servers.dev-health]
-url = "https://mcp.fullchaos.dev/mcp"
+url = "https://mcp.fullchaos.dev"
 enabled = true
 `,
 	}

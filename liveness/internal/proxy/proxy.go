@@ -42,8 +42,12 @@ const (
 	// Upstream is the only host the proxy forwards to. Deliberately a
 	// compiled constant: not a flag, not an environment variable.
 	Upstream = "https://mcp.fullchaos.dev"
-	// Path is the only path the proxy forwards. Anything else is a local 404.
+	// Path is the only client-facing path the proxy forwards. Anything else is
+	// a local 404.
 	Path = "/mcp"
+	// UpstreamPath is the path requested from the upstream: the short URL
+	// (CHAOS-6427); /mcp stays valid there but is no longer probed.
+	UpstreamPath = "/"
 
 	maxRequestBody = 4 << 20
 	maxCapture     = 256 << 10
@@ -151,7 +155,7 @@ func start(opts Options, upstream *url.URL, rt http.RoundTripper) (*Server, erro
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.Out.URL.Scheme = upstream.Scheme
 			pr.Out.URL.Host = upstream.Host
-			pr.Out.URL.Path = Path
+			pr.Out.URL.Path = UpstreamPath
 			pr.Out.URL.RawPath = ""
 			pr.Out.Host = upstream.Host
 		},

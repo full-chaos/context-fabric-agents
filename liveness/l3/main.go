@@ -22,7 +22,7 @@ import (
 )
 
 // endpoint is the production hosted MCP. Deliberately not a flag.
-const endpoint = "https://mcp.fullchaos.dev/mcp"
+const endpoint = "https://mcp.fullchaos.dev"
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
