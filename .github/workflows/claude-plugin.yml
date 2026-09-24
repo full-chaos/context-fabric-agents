@@ -7,8 +7,8 @@ name: claude-plugin
 # authentication", no secret used) and then proves a real connect + the
 # malformed-bearer negative control against the bearer config ARTIFACT
 # (plugins/configs/claude-code.bearer.mcp.json), added separately with
-# `claude mcp add` — not through the plugin. The token is a repository
-# secret and is never printed.
+# `claude mcp add` — not through the plugin. CHAOS-6544: PR and push runs talk to a
+# LOCAL acr-mcp (ci/local-acr), never the production host; no secret is used.
 on:
   pull_request:
     paths:
@@ -17,6 +17,7 @@ on:
       - "skills/**"
       - "ci/claude-code/**"
       - ".github/workflows/claude-plugin.yml"
+      - "ci/local-acr/**"
   push:
     branches: [main]
     paths:
@@ -25,6 +26,7 @@ on:
       - "skills/**"
       - "ci/claude-code/**"
       - ".github/workflows/claude-plugin.yml"
+      - "ci/local-acr/**"
   workflow_dispatch:
 
 permissions: {}
@@ -72,29 +74,29 @@ jobs:
 
   live:
     name: live
-    # Fork PRs get no secrets: the job is skipped there (not required).
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     env:
-      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
-      # Pull requests test the checked-out branch; other events test the
-      # published marketplace exactly as a user adds it.
-      MARKETPLACE_SOURCE: ${{ github.event_name == 'pull_request' && github.workspace || github.repository }}
       DISABLE_AUTOUPDATER: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require the credential
+      - name: Start a local acr-mcp (PR/push checks never touch the production host)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ci/local-acr/start.sh
+      - name: Marketplace copy whose MCP URLs point at the local acr-mcp
         run: |
-          if [ -z "$ACR_MCP_CI_BEARER" ]; then
-            echo "::error::secret ACR_MCP_CI_BEARER is missing"
-            exit 1
-          fi
-          echo "::add-mask::$ACR_MCP_CI_BEARER"
+          set -eu
+          rm -rf "$RUNNER_TEMP/marketplace"
+          mkdir -p "$RUNNER_TEMP/marketplace"
+          cp -r . "$RUNNER_TEMP/marketplace"
+          rm -rf "$RUNNER_TEMP/marketplace/.git"
+          grep -rl 'https://mcp.fullchaos.dev/mcp' "$RUNNER_TEMP/marketplace/plugins" | xargs sed -i "s#https://mcp.fullchaos.dev/mcp#$LOCAL_MCP_URL#g"
+          echo "MARKETPLACE_SOURCE=$RUNNER_TEMP/marketplace" >> "$GITHUB_ENV"
       - name: Install the pinned Claude Code (ci/claude-code lockfile)
         run: |
           npm ci --prefix ci/claude-code
@@ -121,7 +123,8 @@ jobs:
       - name: Add the bearer config ARTIFACT directly (not through the plugin) for the headless connect proof
         run: |
           unset CLAUDE_CONFIG_DIR ACR_MCP_TOKEN
-          bash plugins/configs/claude-code.bearer.add.txt
+          # the shipped artifact, with only its URL pointed at the local acr-mcp
+          sed "s#https://mcp.fullchaos.dev/mcp#$LOCAL_MCP_URL#" plugins/configs/claude-code.bearer.add.txt | bash
       - name: Unset ACR_MCP_TOKEN gives a malformed bearer, HTTP 401 (documented behaviour)
         run: |
           unset CLAUDE_CONFIG_DIR ACR_MCP_TOKEN
@@ -129,11 +132,10 @@ jobs:
           line=$(grep '^dev-health:' "$RUNNER_TEMP/unset.txt")
           case "$line" in *"HTTP 401"*"malformed_bearer"*) echo "unset-env behaviour confirmed" ;;
             *) echo "::error::expected a 401 malformed_bearer failure with ACR_MCP_TOKEN unset"; exit 1 ;; esac
-      - name: With ACR_MCP_TOKEN set, the bearer artifact is Connected to prod
-        env:
-          ACR_MCP_TOKEN: ${{ secrets.ACR_MCP_CI_BEARER }}
+      - name: With ACR_MCP_TOKEN set, the bearer artifact is Connected to the local acr-mcp
         run: |
           unset CLAUDE_CONFIG_DIR
+          export ACR_MCP_TOKEN="$LOCAL_MCP_TOKEN"
           timeout 120 claude mcp list | sed "s/${ACR_MCP_TOKEN}/<redacted>/g" | tee "$RUNNER_TEMP/set.txt"
-          grep -q '^dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ✔ Connected' "$RUNNER_TEMP/set.txt" \
+          grep -qF "dev-health: $LOCAL_MCP_URL (HTTP) - ✔ Connected" "$RUNNER_TEMP/set.txt" \
             || { echo "::error::dev-health (bearer artifact) is not Connected with the token set"; exit 1; }

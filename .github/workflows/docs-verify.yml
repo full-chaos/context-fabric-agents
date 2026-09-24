@@ -1,12 +1,12 @@
 name: docs-verify
 
 # CHAOS-6206. Copy-runs the exact "Verify" and "Uninstall" commands this
-# repo's docs show, against the production hosted server, so the docs are
+# repo's docs show, against a local acr-mcp (CHAOS-6544: PR/push CI never touches the production host), so the docs are
 # proof-read by CI rather than by hand. Install and the initial connect are
 # already proven live by claude-plugin.yml (Claude Code) and codex-live.yml
 # (Codex); this workflow proves the manual (non-plugin) add path and the
-# uninstall path each doc names. The token is a repository secret and is
-# never printed. Fork PRs get no secret: those jobs are skipped there.
+# uninstall path each doc names. The local acr-mcp needs no secret, so
+# fork PRs run these jobs too.
 on:
   pull_request:
     paths:
@@ -15,6 +15,7 @@ on:
       - "plugins/README.md"
       - "codex/README.md"
       - ".github/workflows/docs-verify.yml"
+      - "ci/local-acr/**"
   push:
     branches: [main]
     paths:
@@ -23,6 +24,7 @@ on:
       - "plugins/README.md"
       - "codex/README.md"
       - ".github/workflows/docs-verify.yml"
+      - "ci/local-acr/**"
   workflow_dispatch:
 
 permissions: {}
@@ -38,46 +40,37 @@ env:
 jobs:
   claude-manual-add-and-remove:
     name: claude-manual-add-and-remove
-    # Fork PRs get no secrets: the job is skipped there (not required).
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
-    env:
-      ACR_MCP_CI_BEARER: ${{ secrets.ACR_MCP_CI_BEARER }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require the credential
-        run: |
-          if [ -z "$ACR_MCP_CI_BEARER" ]; then
-            echo "::error::secret ACR_MCP_CI_BEARER is missing"
-            exit 1
-          fi
-          echo "::add-mask::$ACR_MCP_CI_BEARER"
+      - name: Start a local acr-mcp (PR/push checks never touch the production host)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ci/local-acr/start.sh
       - name: Install the pinned Claude Code (ci/claude-code lockfile)
         run: |
           npm ci --prefix ci/claude-code
           echo "$GITHUB_WORKSPACE/ci/claude-code/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Clean HOME, add the manual config exactly as plugins/README.md shows it
-        env:
-          ACR_MCP_TOKEN: ${{ secrets.ACR_MCP_CI_BEARER }}
         run: |
           set -eu
+          export ACR_MCP_TOKEN="$LOCAL_MCP_TOKEN"
           export HOME="$RUNNER_TEMP/clean-home-manual"
           rm -rf "$HOME"; mkdir -p "$HOME"
           unset CLAUDE_CONFIG_DIR
           # shellcheck disable=SC2016 # single-quoted on purpose: Claude Code expands ${ACR_MCP_TOKEN} itself, the shell must not.
-          claude mcp add --transport http dev-health https://mcp.fullchaos.dev/mcp --header 'Authorization: Bearer ${ACR_MCP_TOKEN}'
+          claude mcp add --transport http dev-health "$LOCAL_MCP_URL" --header 'Authorization: Bearer ${ACR_MCP_TOKEN}'
           echo "HOME=$HOME" >> "$GITHUB_ENV"
-      - name: Verify (docs "Verify" section) — Connected to prod
-        env:
-          ACR_MCP_TOKEN: ${{ secrets.ACR_MCP_CI_BEARER }}
+      - name: Verify (docs "Verify" section) — Connected to the local acr-mcp
         run: |
+          export ACR_MCP_TOKEN="$LOCAL_MCP_TOKEN"
           timeout 120 claude mcp list | sed "s/${ACR_MCP_TOKEN}/<redacted>/g" | tee "$RUNNER_TEMP/list-before.txt"
-          grep -q '^dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ✔ Connected' "$RUNNER_TEMP/list-before.txt" \
+          grep -qF "dev-health: $LOCAL_MCP_URL (HTTP) - ✔ Connected" "$RUNNER_TEMP/list-before.txt" \
             || { echo "::error::dev-health is not Connected after the manual add"; exit 1; }
       - name: Uninstall (docs "Uninstall" section) — claude mcp remove
         run: |
@@ -92,18 +85,29 @@ jobs:
 
   claude-plugin-uninstall:
     name: claude-plugin-uninstall
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     env:
-      MARKETPLACE_SOURCE: ${{ github.event_name == 'pull_request' && github.workspace || github.repository }}
       DISABLE_AUTOUPDATER: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Start a local acr-mcp (PR/push checks never touch the production host)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ci/local-acr/start.sh
+      - name: Marketplace copy whose MCP URLs point at the local acr-mcp
+        run: |
+          set -eu
+          rm -rf "$RUNNER_TEMP/marketplace"
+          mkdir -p "$RUNNER_TEMP/marketplace"
+          cp -r . "$RUNNER_TEMP/marketplace"
+          rm -rf "$RUNNER_TEMP/marketplace/.git"
+          grep -rl 'https://mcp.fullchaos.dev/mcp' "$RUNNER_TEMP/marketplace/plugins" | xargs sed -i "s#https://mcp.fullchaos.dev/mcp#$LOCAL_MCP_URL#g"
+          echo "MARKETPLACE_SOURCE=$RUNNER_TEMP/marketplace" >> "$GITHUB_ENV"
       - name: Install the pinned Claude Code (ci/claude-code lockfile)
         run: |
           npm ci --prefix ci/claude-code
@@ -117,7 +121,7 @@ jobs:
           claude plugin marketplace add "$MARKETPLACE_SOURCE"
           claude plugin install dev-health@dev-health
           timeout 120 claude mcp list | tee "$RUNNER_TEMP/list-before.txt"
-          grep -q '^plugin:dev-health:dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ! Needs authentication' "$RUNNER_TEMP/list-before.txt" \
+          grep -qF "plugin:dev-health:dev-health: $LOCAL_MCP_URL (HTTP) - ! Needs authentication" "$RUNNER_TEMP/list-before.txt" \
             || { echo "::error::dev-health plugin is not in the expected pre-login OAuth state before uninstall"; exit 1; }
           echo "HOME=$HOME" >> "$GITHUB_ENV"
       - name: Uninstall (docs "Uninstall" section) — claude plugin uninstall
@@ -138,7 +142,6 @@ jobs:
 
   codex-uninstall:
     name: codex-uninstall
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
