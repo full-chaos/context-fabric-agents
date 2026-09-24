@@ -2,11 +2,11 @@
 
 Every config in this repo names one URL field. Change that one field to
 point a client at your own deployment instead of
-`https://mcp.fullchaos.dev/mcp`. Nothing else in a config needs to change.
+`https://mcp.fullchaos.dev`. Nothing else in a config needs to change.
 
-After the next acr deploy the hosted server also answers at the short URL
-`https://mcp.fullchaos.dev`; `/mcp` stays valid, and the configs in this repo
-keep `/mcp` until then.
+The hosted server answers at the short URL `https://mcp.fullchaos.dev`, which
+the configs in this repo use; `https://mcp.fullchaos.dev/mcp` stays valid, so a
+config that still names it keeps working.
 
 | Client | File | Field |
 |---|---|---|

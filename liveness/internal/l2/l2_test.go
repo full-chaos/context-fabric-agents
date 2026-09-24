@@ -227,7 +227,7 @@ func TestMissingCredentialIsRed(t *testing.T) {
 }
 
 func TestProxyURLMustBeLoopback(t *testing.T) {
-	for _, bad := range []string{"https://mcp.fullchaos.dev/mcp", "http://10.0.0.1:18765/mcp", "http://localhost:18765/mcp", "http://127.0.0.1:18765/other"} {
+	for _, bad := range []string{"https://mcp.fullchaos.dev", "http://10.0.0.1:18765/mcp", "http://localhost:18765/mcp", "http://127.0.0.1:18765/other"} {
 		c := cfg(t, "claude-code", healthy(), writeRecords(t, discover))
 		c.ProxyURL = bad
 		mustFail(t, Run(context.Background(), c), StepRender, "")
@@ -245,7 +245,7 @@ func TestConnectFailuresAreRed(t *testing.T) {
 
 	// Connected to some other URL (not the proxy) is not a pass.
 	f = healthy()
-	f.answers["claude mcp list"] = out("dev-health: https://mcp.fullchaos.dev/mcp (HTTP) - ✔ Connected\n")
+	f.answers["claude mcp list"] = out("dev-health: https://mcp.fullchaos.dev (HTTP) - ✔ Connected\n")
 	mustFail(t, Run(context.Background(), cfg(t, "claude-code", f, writeRecords(t, discover))), StepConnect, "claude mcp list")
 
 	f = healthy()

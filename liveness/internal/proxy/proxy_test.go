@@ -69,7 +69,7 @@ func TestUpstreamIsNotConfigurable(t *testing.T) {
 	in.Host = "evil.example"
 	out := in.Clone(context.Background())
 	s.rp.Rewrite(&httputil.ProxyRequest{In: in, Out: out})
-	if out.URL.Scheme != "https" || out.URL.Host != "mcp.fullchaos.dev" || out.Host != "mcp.fullchaos.dev" || out.URL.Path != "/mcp" {
+	if out.URL.Scheme != "https" || out.URL.Host != "mcp.fullchaos.dev" || out.Host != "mcp.fullchaos.dev" || out.URL.Path != "/" {
 		t.Fatalf("rewritten to %s (Host %s)", out.URL, out.Host)
 	}
 }
@@ -285,7 +285,7 @@ func TestRealSDKHandshakeThroughProxy(t *testing.T) {
 	})
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true})
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", handler)
+	mux.Handle("/", handler)
 
 	for _, tc := range []struct{ requested, method string }{
 		{"2026-07-28", "server/discover"},

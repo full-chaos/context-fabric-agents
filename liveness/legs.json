@@ -4,7 +4,7 @@
     {
       "id": "l1",
       "mode": "live",
-      "description": "L1 protocol probe against https://mcp.fullchaos.dev/mcp (go-sdk v1.8.0 client)",
+      "description": "L1 protocol probe against https://mcp.fullchaos.dev (go-sdk v1.8.0 client)",
       "workflow": "liveness.yml",
       "job": "l1",
       "required_steps": [
@@ -67,7 +67,7 @@
     {
       "id": "l3",
       "mode": "live",
-      "description": "L3 OAuth discovery chain against https://mcp.fullchaos.dev/mcp: unauthenticated 401 -> resource_metadata -> protected-resource metadata -> authorization-server metadata (S256, registration_endpoint present). No credential, no consent, no token.",
+      "description": "L3 OAuth discovery chain against https://mcp.fullchaos.dev: unauthenticated 401 -> resource_metadata -> protected-resource metadata -> authorization-server metadata (S256, registration_endpoint present). No credential, no consent, no token.",
       "workflow": "liveness.yml",
       "job": "l3",
       "required_steps": ["a_unauth", "b_prm", "c_asmeta"]

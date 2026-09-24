@@ -290,7 +290,7 @@ func TestWrite_Codex_ExistingOAuthTableIsNotReportedAsWired(t *testing.T) {
 
 func TestClaudeMCPAddCommand_NeverContainsALiteralToken(t *testing.T) {
 	cmd := claudeMCPAddCommand(render.RemoteURL)
-	want := "claude 'mcp' 'add' '--transport' 'http' 'dev-health' 'https://mcp.fullchaos.dev/mcp' '--header' 'Authorization: Bearer ${ACR_MCP_TOKEN}'"
+	want := "claude 'mcp' 'add' '--transport' 'http' 'dev-health' 'https://mcp.fullchaos.dev' '--header' 'Authorization: Bearer ${ACR_MCP_TOKEN}'"
 	if cmd != want {
 		t.Errorf("claudeMCPAddCommand(render.RemoteURL) = %q, want %q", cmd, want)
 	}
@@ -505,7 +505,7 @@ func TestWrite_ClaudeCode_CLIPresentButFailsFallsBackGracefully(t *testing.T) {
 // targets a DIFFERENT one (e.g. trial) -- the marker alone is not enough;
 // the url must match too.
 func TestWrite_Codex_ExistingBearerTableForADifferentURLIsNotReportedAsWired(t *testing.T) {
-	const oldURL = "https://mcp.fullchaos.dev/mcp"
+	const oldURL = "https://mcp.fullchaos.dev"
 	const newURL = "https://mcp.trial.example/mcp"
 	dir := t.TempDir()
 	codexHome := t.TempDir()

@@ -106,7 +106,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/marketplace"
           cp -r . "$RUNNER_TEMP/marketplace"
           rm -rf "$RUNNER_TEMP/marketplace/.git"
-          grep -rl 'https://mcp.fullchaos.dev/mcp' "$RUNNER_TEMP/marketplace/plugins" | xargs sed -i "s#https://mcp.fullchaos.dev/mcp#$LOCAL_MCP_URL#g"
+          grep -rl 'https://mcp.fullchaos.dev' "$RUNNER_TEMP/marketplace/plugins" | xargs sed -i "s#https://mcp.fullchaos.dev#$LOCAL_MCP_URL#g"
           echo "MARKETPLACE_SOURCE=$RUNNER_TEMP/marketplace" >> "$GITHUB_ENV"
       - name: Install the pinned Claude Code (ci/claude-code lockfile)
         run: |

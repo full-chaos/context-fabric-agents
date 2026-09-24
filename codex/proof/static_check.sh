@@ -36,19 +36,19 @@ import sys, tomllib
 with open(sys.argv[1], "rb") as f:
     d = tomllib.load(f)
 t = d["mcp_servers"]["dev-health"]
-assert t["url"] == "https://mcp.fullchaos.dev/mcp", t
+assert t["url"] == "https://mcp.fullchaos.dev", t
 PY
   ch="$(newhome)"
   cp "$root/codex/configs/config.$v.toml" "$ch/config.toml"
   out="$(CODEX_HOME="$ch" codex mcp get dev-health 2>&1)" || fail "$v: codex mcp get failed: $out"
   echo "--- $v: codex mcp get"; echo "$out"
-  echo "$out" | grep -q 'url: https://mcp.fullchaos.dev/mcp' || fail "$v: url missing"
+  echo "$out" | grep -q 'url: https://mcp.fullchaos.dev' || fail "$v: url missing"
   if [ "$v" = bearer ]; then
     echo "$out" | grep -q 'bearer_token_env_var: ACR_MCP_TOKEN' || fail "bearer: env var missing"
   else
     echo "$out" | grep -q 'bearer_token_env_var: -' || fail "oauth: unexpected bearer env var"
   fi
-  sed -i "s#https://mcp.fullchaos.dev/mcp#$DEAD_URL#" "$ch/config.toml"
+  sed -i "s#https://mcp.fullchaos.dev#$DEAD_URL#" "$ch/config.toml"
   CODEX_HOME="$ch" codex mcp list 2>&1 | grep -q '^dev-health ' || fail "$v: mcp list lacks dev-health"
 done
 
@@ -60,9 +60,9 @@ codex plugin add dev-health@dev-health 2>&1 | tee "$work/add.txt"
 plugin_root="$(sed -n 's/^Installed plugin root: //p' "$work/add.txt")"
 [ -f "$plugin_root/skills/dev-health/SKILL.md" ] || fail "plugin cache lacks the skill"
 cmp "$plugin_root/skills/dev-health/SKILL.md" "$root/skills/dev-health/SKILL.md" || fail "skill differs from skills/dev-health/SKILL.md"
-grep -rq 'https://mcp.fullchaos.dev/mcp' "$plugin_root/.mcp.json" || fail "installed plugin .mcp.json lacks the MCP url"
+grep -rq 'https://mcp.fullchaos.dev' "$plugin_root/.mcp.json" || fail "installed plugin .mcp.json lacks the MCP url"
 # Point the installed copy at a dead loopback URL before anything connects.
-grep -rl 'https://mcp.fullchaos.dev/mcp' "$plugin_root" | xargs sed -i "s#https://mcp.fullchaos.dev/mcp#$DEAD_URL#g"
+grep -rl 'https://mcp.fullchaos.dev' "$plugin_root" | xargs sed -i "s#https://mcp.fullchaos.dev#$DEAD_URL#g"
 codex mcp list 2>&1 | tee "$work/plugin-list.txt"
 grep -q '^dev-health .*127.0.0.1:9/mcp' "$work/plugin-list.txt" || fail "plugin MCP entry not listed"
 # The skill must be model-visible: `codex debug prompt-input` renders the skill list.
@@ -73,7 +73,7 @@ unset CODEX_HOME
 
 # Failing-first pair: planted defects must be rejected.
 ch="$(newhome)"
-printf '[mcp_servers.dev-health]\nurl = "https://mcp.fullchaos.dev/mcp"\nbearer_token_env_var = 123\n' > "$ch/config.toml"
+printf '[mcp_servers.dev-health]\nurl = "https://mcp.fullchaos.dev"\nbearer_token_env_var = 123\n' > "$ch/config.toml"
 if CODEX_HOME="$ch" codex mcp get dev-health >"$work/planted.txt" 2>&1; then
   cat "$work/planted.txt"; fail "planted wrong-typed key was ACCEPTED by Codex"
 fi

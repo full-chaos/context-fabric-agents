@@ -1,6 +1,6 @@
 # liveness
 
-Scheduled liveness for the hosted MCP (`https://mcp.fullchaos.dev/mcp`).
+Scheduled liveness for the hosted MCP (`https://mcp.fullchaos.dev`).
 Workflows: `.github/workflows/liveness.yml` (L1 + L3; every 6 h at :41) and
 `.github/workflows/liveness-l2.yml` (L2; every 6 h at 03:11, 09:11, 15:11,
 21:11 UTC, offset 3.5 h from L1), both with `workflow_dispatch` (no inputs).
@@ -95,7 +95,7 @@ the failure issue).
 ## L3 OAuth discovery chain (`liveness/l3`, CHAOS-6208)
 
 Unauthenticated: no credential, no consent, no token. Endpoint is the
-compiled constant `https://mcp.fullchaos.dev/mcp`.
+compiled constant `https://mcp.fullchaos.dev`.
 
 | Step | Pass when |
 | --- | --- |

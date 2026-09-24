@@ -1,6 +1,6 @@
 # codex
 
-Codex bundle for the Dev Health hosted MCP server (`https://mcp.fullchaos.dev/mcp`). CHAOS-6202.
+Codex bundle for the Dev Health hosted MCP server (`https://mcp.fullchaos.dev`). CHAOS-6202.
 
 | Path | What | Owner |
 | --- | --- | --- |
@@ -58,7 +58,7 @@ codex mcp get dev-health
 # scope, requires trusting the project on first use).
 
 [mcp_servers.dev-health]
-url = "https://mcp.fullchaos.dev/mcp"
+url = "https://mcp.fullchaos.dev"
 bearer_token_env_var = "ACR_MCP_TOKEN"
 enabled = true
 ```

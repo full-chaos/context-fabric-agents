@@ -1,7 +1,7 @@
 # VS Code
 
 Config file for VS Code (GitHub Copilot Chat MCP support) to use the hosted
-Dev Health MCP server (`https://mcp.fullchaos.dev/mcp`).
+Dev Health MCP server (`https://mcp.fullchaos.dev`).
 
 Rendered and checked by `internal/render` (`go run ./cmd/render -check`).
 Doc sources:
@@ -69,7 +69,7 @@ environment variable yourself for this client.
   "servers": {
     "dev-health": {
       "type": "http",
-      "url": "https://mcp.fullchaos.dev/mcp",
+      "url": "https://mcp.fullchaos.dev",
       "headers": {
         "Authorization": "Bearer ${input:acr-mcp-token}"
       }

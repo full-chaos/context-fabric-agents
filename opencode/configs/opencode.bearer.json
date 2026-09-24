@@ -3,7 +3,7 @@
   "mcp": {
     "dev-health": {
       "type": "remote",
-      "url": "https://mcp.fullchaos.dev/mcp",
+      "url": "https://mcp.fullchaos.dev",
       "enabled": true,
       "oauth": false,
       "headers": {

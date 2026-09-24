@@ -1,7 +1,7 @@
 # OpenCode
 
 Config files for OpenCode to use the hosted Dev Health MCP server
-(`https://mcp.fullchaos.dev/mcp`). OpenCode has two config generations with
+(`https://mcp.fullchaos.dev`). OpenCode has two config generations with
 different shapes; pick the file that matches your OpenCode version.
 
 Rendered and checked by `internal/render` (`go run ./cmd/render -check`).
@@ -71,7 +71,7 @@ installed OpenCode.
   "mcp": {
     "dev-health": {
       "type": "remote",
-      "url": "https://mcp.fullchaos.dev/mcp",
+      "url": "https://mcp.fullchaos.dev",
       "enabled": true,
       "oauth": false,
       "headers": {

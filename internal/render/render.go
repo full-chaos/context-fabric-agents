@@ -15,7 +15,7 @@ import "fmt"
 
 const (
 	// RemoteURL is the hosted MCP endpoint (production).
-	RemoteURL = "https://mcp.fullchaos.dev/mcp"
+	RemoteURL = "https://mcp.fullchaos.dev"
 	// ServerName is the server key every remote config registers.
 	ServerName = "dev-health"
 	// TokenEnvVar names the environment variable that holds the caller's
