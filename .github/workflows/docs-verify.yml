@@ -162,13 +162,13 @@ jobs:
         run: |
           codex plugin marketplace add full-chaos/context-fabric-agents
           codex plugin add dev-health@dev-health
-          codex mcp list | tee "$RUNNER_TEMP/codex-list-before.txt"
+          HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 NO_PROXY= codex mcp list | tee "$RUNNER_TEMP/codex-list-before.txt"
           grep -q 'dev-health' "$RUNNER_TEMP/codex-list-before.txt" \
             || { echo "::error::dev-health is not registered after codex plugin add"; exit 1; }
       - name: Negative control — marketplace remove alone does NOT remove the MCP entry
         run: |
           codex plugin marketplace remove dev-health
-          codex mcp list | tee "$RUNNER_TEMP/codex-list-mid.txt"
+          HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 NO_PROXY= codex mcp list | tee "$RUNNER_TEMP/codex-list-mid.txt"
           grep -q 'dev-health' "$RUNNER_TEMP/codex-list-mid.txt" \
             || { echo "::error::expected dev-health to still be listed after only removing the marketplace (docs would be wrong otherwise)"; exit 1; }
           codex plugin marketplace add full-chaos/context-fabric-agents
@@ -178,7 +178,7 @@ jobs:
           codex plugin remove dev-health@dev-health
       - name: dev-health is gone after the plugin is removed
         run: |
-          codex mcp list | tee "$RUNNER_TEMP/codex-list-after.txt"
+          HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 NO_PROXY= codex mcp list | tee "$RUNNER_TEMP/codex-list-after.txt"
           if grep -q 'dev-health' "$RUNNER_TEMP/codex-list-after.txt"; then
             echo "::error::dev-health is still registered after codex plugin remove"
             exit 1

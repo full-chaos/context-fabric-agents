@@ -17,6 +17,14 @@ trap 'rm -rf "$work"' EXIT
 export HOME="$work/home"
 mkdir -p "$HOME"
 
+# CHAOS-6544: this runs on every PR/push, so it must never reach the production
+# MCP host. Every codex invocation that can connect (`mcp list`, `debug
+# prompt-input`) sees the server URL rewritten to a dead loopback port, and any
+# proxy-using traffic is pointed at a dead loopback proxy. The static checks on
+# the shipped files (url == prod) stay; only what codex CONNECTS to changes.
+DEAD_URL="http://127.0.0.1:9/mcp"
+export HTTPS_PROXY="${STATIC_CHECK_PROXY:-http://127.0.0.1:9}" https_proxy="${STATIC_CHECK_PROXY:-http://127.0.0.1:9}" NO_PROXY="" no_proxy=""
+
 fail() { echo "FAIL: $*" >&2; exit 1; }
 newhome() { local d; d="$(mktemp -d "$work/ch.XXXXXX")"; echo "$d"; }
 
@@ -40,6 +48,7 @@ PY
   else
     echo "$out" | grep -q 'bearer_token_env_var: -' || fail "oauth: unexpected bearer env var"
   fi
+  sed -i "s#https://mcp.fullchaos.dev/mcp#$DEAD_URL#" "$ch/config.toml"
   CODEX_HOME="$ch" codex mcp list 2>&1 | grep -q '^dev-health ' || fail "$v: mcp list lacks dev-health"
 done
 
@@ -51,8 +60,11 @@ codex plugin add dev-health@dev-health 2>&1 | tee "$work/add.txt"
 plugin_root="$(sed -n 's/^Installed plugin root: //p' "$work/add.txt")"
 [ -f "$plugin_root/skills/dev-health/SKILL.md" ] || fail "plugin cache lacks the skill"
 cmp "$plugin_root/skills/dev-health/SKILL.md" "$root/skills/dev-health/SKILL.md" || fail "skill differs from skills/dev-health/SKILL.md"
+grep -rq 'https://mcp.fullchaos.dev/mcp' "$plugin_root/.mcp.json" || fail "installed plugin .mcp.json lacks the MCP url"
+# Point the installed copy at a dead loopback URL before anything connects.
+grep -rl 'https://mcp.fullchaos.dev/mcp' "$plugin_root" | xargs sed -i "s#https://mcp.fullchaos.dev/mcp#$DEAD_URL#g"
 codex mcp list 2>&1 | tee "$work/plugin-list.txt"
-grep -q '^dev-health .*https://mcp.fullchaos.dev/mcp' "$work/plugin-list.txt" || fail "plugin MCP entry not listed"
+grep -q '^dev-health .*127.0.0.1:9/mcp' "$work/plugin-list.txt" || fail "plugin MCP entry not listed"
 # The skill must be model-visible: `codex debug prompt-input` renders the skill list.
 timeout 90 codex debug prompt-input "hi" >"$work/prompt.json" 2>&1 || fail "codex debug prompt-input failed"
 grep -q 'dev-health:dev-health' "$work/prompt.json" || fail "skill dev-health:dev-health not in the model-visible skill list"

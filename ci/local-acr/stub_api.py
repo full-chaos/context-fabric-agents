@@ -11,6 +11,7 @@ and never logs a header.
 """
 import http.client
 import json
+import re
 import ssl
 import sys
 import threading
@@ -93,6 +94,13 @@ class TLSFront(BaseHTTPRequestHandler):
     def _proxy(self):
         if self.path.startswith(("/.well-known/oauth-authorization-server", "/.well-known/openid-configuration")):
             return self._as_metadata()
+        # Only the MCP endpoint and OAuth discovery documents are proxied; any
+        # other path (or one carrying control characters) is refused.
+        if not re.fullmatch(r"/(mcp|\.well-known/oauth-protected-resource(/mcp)?)", self.path):
+            self.send_response(404)
+            self.send_header("Connection", "close")
+            self.end_headers()
+            return
         length = int(self.headers.get("Content-Length") or 0)
         data = self.rfile.read(length) if length else None
         conn = http.client.HTTPConnection("127.0.0.1", TLSFront.upstream_port, timeout=60)
@@ -101,7 +109,7 @@ class TLSFront(BaseHTTPRequestHandler):
         resp = conn.getresponse()
         self.send_response(resp.status)
         for k, v in resp.getheaders():
-            if k.lower() not in ("transfer-encoding", "connection", "content-length"):
+            if k.lower() not in ("transfer-encoding", "connection", "content-length") and not re.search(r"[\r\n]", k + v):
                 self.send_header(k, v)
         self.send_header("Connection", "close")
         self.end_headers()
@@ -124,6 +132,7 @@ if __name__ == "__main__":
         TLSFront.upstream_port = mcp_port
         TLSFront.base = "https://localhost:%d" % tls_port
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.load_cert_chain(cert, key)
         front = ThreadingHTTPServer(("127.0.0.1", tls_port), TLSFront)
         front.socket = ctx.wrap_socket(front.socket, server_side=True)

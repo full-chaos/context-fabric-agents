@@ -2,8 +2,9 @@
 # CHAOS-6544. Start a LOCAL acr-mcp (HTTP transport, 127.0.0.1 only) so PR and
 # push client checks never touch the production MCP host.
 #
-#   1. download the acr-mcp linux/amd64 asset from this repo's mirror release
-#      and check it against the release's acr-mcp-SHA256SUMS;
+#   1. download the acr-mcp linux/amd64 asset from this repo's mirror release,
+#      verify acr's cosign signature on acr-mcp-SHA256SUMS, then check the
+#      archive against it;
 #   2. start stub_api.py (the loopback stand-in for the hosted ACR API);
 #   3. start acr-mcp pointed at the stub;
 #   4. export LOCAL_MCP_URL (an HTTPS front on https://localhost, self-signed;
@@ -27,7 +28,20 @@ mkdir -p "$dir"
 tag_args=()
 [ -n "${LOCAL_ACR_TAG:-}" ] && tag_args=("$LOCAL_ACR_TAG")
 gh release download "${tag_args[@]}" -R "$repo" -D "$dir" --clobber \
-  -p 'acr-mcp-SHA256SUMS' -p 'acr-mcp_*_linux_amd64.tar.gz'
+  -p 'acr-mcp-SHA256SUMS' -p 'acr-mcp-SHA256SUMS.sigstore.json' -p 'acr-mcp_*_linux_amd64.tar.gz'
+# Authenticate the manifest itself: acr's own cosign keyless signature, checked
+# against acr's release workflow identity (same identity publish-acr-release.yml
+# and docs/verify-release.md use). cosign is SHA-256 pinned.
+if ! command -v cosign >/dev/null 2>&1; then
+  cosign_sha=c3b4f5410e608af03a5eb0aaac84a4313d8da131248e08ff1759ac70c79d1644
+  curl -fsSL -o "$dir/cosign" "https://github.com/sigstore/cosign/releases/download/v2.6.5/cosign-linux-amd64"
+  echo "$cosign_sha  $dir/cosign" | sha256sum --check
+  chmod 0755 "$dir/cosign"
+  export PATH="$dir:$PATH"
+fi
+cosign verify-blob "$dir/acr-mcp-SHA256SUMS" --bundle "$dir/acr-mcp-SHA256SUMS.sigstore.json" \
+  --certificate-identity-regexp '^https://github\.com/full-chaos/dev-health-acr/\.github/workflows/release\.yml@refs/(heads/main|tags/v[0-9]+\.[0-9]+\.[0-9]+(-(dev|beta)\.[0-9]+)?)$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 (cd "$dir" && grep ' acr-mcp_.*_linux_amd64\.tar\.gz$' acr-mcp-SHA256SUMS | sha256sum -c -)
 tar -xzf "$dir"/acr-mcp_*_linux_amd64.tar.gz -C "$dir" acr-mcp
 
