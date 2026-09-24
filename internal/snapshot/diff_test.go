@@ -128,7 +128,7 @@ func TestNegotiatedRevisionChangeIsMajorEitherWay(t *testing.T) {
 	}
 }
 
-func TestServerVersionAndCaptureTimeOnly(t *testing.T) {
+func TestServerVersionAndCaptureTimeAreNotDrift(t *testing.T) {
 	o := snapWith(t, "t", base)
 	n := snapWith(t, "t", base)
 	o.CapturedAt, n.CapturedAt = "2026-01-01T00:00:00Z", "2026-02-02T00:00:00Z"
@@ -136,9 +136,12 @@ func TestServerVersionAndCaptureTimeOnly(t *testing.T) {
 		t.Fatal("captured_at must not count as drift")
 	}
 	n.ServerInfo.Version = "2"
-	rep := Compare(o, n)
-	if rep.Severity() != Patch {
-		t.Fatalf("server version: %s", rep.Severity())
+	if rep := Compare(o, n); rep.Drifted() {
+		t.Fatalf("server version must not count as drift: %s", rep.Markdown())
+	}
+	n.ServerInfo.Title = "other"
+	if Compare(o, n).Severity() != Patch {
+		t.Fatal("server title change must still be patch drift")
 	}
 }
 
