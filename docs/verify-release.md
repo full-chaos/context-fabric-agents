@@ -51,6 +51,31 @@ gh attestation verify "context-fabric-agents-codex-${TAG#v}.tar.gz" \
 
 Expected: `Verification succeeded!`.
 
+## The mirrored `acr-mcp` assets
+
+Releases here also mirror the `acr-mcp` STDIO binary from the ACR release. These files
+are ACR's own, published unmodified, and are signed by ACR's release workflow, not this
+one:
+
+| Asset | Meaning |
+|---|---|
+| `acr-mcp_<version>_<os>_<arch>.tar.gz` / `.zip` | The binary archive |
+| `acr-mcp-SHA256SUMS` | SHA-256 of every mirrored `acr-mcp` file (ACR's per-product manifest) |
+| `acr-mcp-SHA256SUMS.sigstore.json` | cosign keyless bundle for `acr-mcp-SHA256SUMS` |
+
+The certificate identity is the ACR release workflow, on `main` or a release tag:
+
+```sh
+cosign verify-blob acr-mcp-SHA256SUMS \
+  --bundle acr-mcp-SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/full-chaos/dev-health-acr/\.github/workflows/release\.yml@refs/(heads/main|tags/v[0-9]+\.[0-9]+\.[0-9]+(-(dev|beta)\.[0-9]+)?)$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum --check acr-mcp-SHA256SUMS
+```
+
+These assets carry no `.sig`/`.pem` sidecars and no GitHub attestation from this
+repository; the bundle above is the signature.
+
 ## Version rule
 
 The tag equals the `version` of every plugin manifest in the tarballs (Claude Code
