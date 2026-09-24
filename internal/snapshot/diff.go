@@ -36,7 +36,7 @@ type Change struct {
 	Text     string
 }
 
-// Report is the full comparison. captured_at is never compared.
+// Report is the full comparison. captured_at and server_info.version are never compared.
 type Report struct {
 	Changes []Change
 }
@@ -87,9 +87,8 @@ func Compare(oldS, newS *Snapshot) Report {
 	if o.ServerInfo.Title != n.ServerInfo.Title {
 		add(Patch, "server title %q -> %q", o.ServerInfo.Title, n.ServerInfo.Title)
 	}
-	if o.ServerInfo.Version != n.ServerInfo.Version {
-		add(Patch, "server version %q -> %q", o.ServerInfo.Version, n.ServerInfo.Version)
-	}
+	// server_info.version is build-specific (changes on every acr deploy):
+	// kept in the snapshot for information, never compared (CHAOS-6221).
 
 	// Negotiated revisions: any change, down or up, is recorded (plan D9).
 	oneg := map[string]Negotiation{}
