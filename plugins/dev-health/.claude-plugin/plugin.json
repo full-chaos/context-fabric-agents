@@ -1,6 +1,6 @@
 {
   "name": "dev-health",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Ask engineering delivery questions and inspect cited evidence through the hosted Dev Health MCP server.",
   "author": {
     "name": "Full Chaos",

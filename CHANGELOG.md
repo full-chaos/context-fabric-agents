@@ -31,6 +31,10 @@ calls "major" bumps the minor digit instead (`0.x.0 -> 0.(x+1).0`), per semver's
 "anything may change" rule for `0.y.z`. The bump becomes a real major (`1.0.0+`) once the
 repo has shipped a `v1.0.0` release.
 
+## [Unreleased] - 0.3.1
+
+- Mirror acr's signed per-product acr-mcp manifest (CHAOS-6236). `cmd/login` unchanged.
+
 ## [Unreleased] - 0.3.0
 
 - `cmd/login`: a headless/remote device-grant login helper (RFC 8628), released as a
