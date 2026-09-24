@@ -7,7 +7,7 @@ Agent client plugins, skills, and configs for the **Dev Health hosted MCP
 server**. Point your agent client at one URL and it can ask engineering
 delivery questions and inspect cited evidence — no local server to run.
 
-**Status: released.** Current version: `0.3.0`. See [Install](#install) below, or
+**Status: released.** Current version: `0.3.1`. See [Install](#install) below, or
 [docs/verify-release.md](docs/verify-release.md) to check a release asset's signature first.
 
 ## Hosted endpoints
