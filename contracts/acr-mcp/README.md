@@ -25,13 +25,13 @@ go run ./cmd/snapshot diff -old contracts/acr-mcp/snapshot.json -new /tmp/new.js
 
 `.github/workflows/contract-drift.yml` captures daily. On a difference it
 force-updates the `contract-drift` branch and opens or updates one PR with the
-diff. `captured_at` alone is never drift. Severity:
+diff. `captured_at` and `server_info.version` (build-specific) are recorded but never drift. Severity:
 
 | Severity | Change |
 |---|---|
 | `major` | Tool, resource, prompt or prompt argument removed or renamed; input schema tightened (or changed in a way that is not provably a widening); new required prompt argument; negotiated revision changed. Update skills and configs, then cut a major release. |
 | `minor` | Something added; a schema widened. |
-| `patch` | Server version, or description text only. |
+| `patch` | Description text only. |
 
 ## Ask-dev pin rule
 
