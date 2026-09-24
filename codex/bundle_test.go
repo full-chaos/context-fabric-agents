@@ -148,7 +148,7 @@ func TestBundleRejectsPlantedDefects(t *testing.T) {
 		got  []string
 	}{
 		{"skills path", problems(rep(a, `"./skills/"`, `"./skill/"`), b, c, d, e)},
-		{"bad version", problems(rep(a, `"0.3.0"`, `"one"`), b, c, d, e)},
+		{"bad version", problems(rep(a, `"0.3.1"`, `"one"`), b, c, d, e)},
 		{"wrong url", problems(a, rep(b, "mcp.fullchaos.dev", "example.com"), c, d, e)},
 		{"planted bearer key", problems(a, rep(b, `"enabled": true`, `"enabled": true, "bearer_token_env_var": "ACR_MCP_TOKEN"`), c, d, e)},
 		{"planted Authorization", problems(a, rep(b, `"enabled": true`, `"headers": {"Authorization": "x"}`), c, d, e)},
