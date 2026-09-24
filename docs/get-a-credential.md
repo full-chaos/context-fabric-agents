@@ -25,8 +25,9 @@ Two ways to get one.
    365 days). They send you the token value out of band (never in a
    ticket, a chat log, or a committed file).
 
-This repository does not ship the `acr-mcp` binary — it ships client
-configs only. If you need the STDIO CLI, see the ACR project's own docs.
+This repository ships client configs, and mirrors the signed `acr-mcp`
+STDIO binary in its Releases (see "The mirrored `acr-mcp` assets" in
+[verify-release.md](verify-release.md) to verify it).
 
 ## Rules for every credential
 
