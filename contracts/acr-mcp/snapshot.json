@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-23T10:01:34Z",
+  "captured_at": "2026-09-26T09:54:38Z",
   "host": "mcp.fullchaos.dev",
   "negotiations": [
     {
@@ -36,6 +36,10 @@
         {
           "name": "evidence_ref_id",
           "required": true
+        },
+        {
+          "name": "result_id",
+          "required": false
         }
       ],
       "name": "expand_evidence"
@@ -88,7 +92,7 @@
   "server_info": {
     "name": "dev-health-acr-mcp",
     "title": "Dev Health ACR",
-    "version": "0.1.1-main.c1f947b50017e52dcebfa7e95d4604d2e3f0941a"
+    "version": "0.1.1-main.cd41441b8dff89c69bd8aa5c6418fe00d4495d28"
   },
   "tools": [
     {
@@ -714,7 +718,7 @@
           },
           "evidence_window": {
             "$ref": "#/$defs/RequestedEvidenceWindow",
-            "description": "Optional period the answer should cover. Give either relative_id (trailing_30d, trailing_90d, trailing_365d or all_time) or both start and end. This is your stated intent; the service may still report the window it used and ask you to confirm it (see window_clarification and structure_needs.window_options)."
+            "description": "Optional period the answer should cover. Give either relative_id (trailing_30d, trailing_90d, trailing_365d or all_time) or both start and end. This is your stated intent and is used as given; the service reports the window it used (see effective_evidence_window)."
           },
           "expected_kinds": {
             "description": "Optional hint about what kinds of subject the question is about, for example [\"team\"] or [\"pull_request\"]. Use it when the question is ambiguous about kind. It states your intent, not a fact about any subject. Every value in the SubjectKind list is accepted, but only team, project, repository, incident and pull_request can be discovered as a cohort (a \"which ...\" question over many); other kinds are answered when you name the specific subject.",
@@ -813,7 +817,7 @@
         "title": "ACR MCP investigate_question Request v1",
         "type": "object"
       },
-      "input_schema_digest": "sha256:a8922d094160a781e0631102f16c9ca7c25b8db529356577ae1be2ab85cb61e3",
+      "input_schema_digest": "sha256:13c1be077e4eabc2fdea2f944be18175787b12be68a21ad63bf4728272c75892",
       "name": "investigate_question"
     },
     {
@@ -846,12 +850,12 @@
       "name": "investigation_result"
     },
     {
-      "description_digest": "sha256:d280080904b79b3d47d1cd3ee5f08d7a0587152a2df0de79dbc3bc0013755077",
+      "description_digest": "sha256:2d451fdf1112db2ce87915a26b011e2551fdb66db4aac5cc3466a91439d15cd3",
       "input_schema": {
         "$id": "https://contracts.fullchaos.dev/acr/v1/mcp_source_evidence_request.v1.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "Input for the source_evidence tool. Exactly one field, evidence_ref_id, is accepted and required.",
+        "description": "Input for the source_evidence tool. evidence_ref_id is required. result_id is required for a Context Fabric reference (acr:v1:...), which is keyed by its subject and expands only in the scope of the answer that returned it.",
         "examples": [
           {
             "evidence_ref_id": "ev_2f9c81ab"
@@ -863,6 +867,12 @@
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
+          },
+          "result_id": {
+            "description": "The result_id of the investigate_question answer that returned evidence_ref_id. Required when evidence_ref_id is a Context Fabric reference (acr:v1:...): the reference names its subject, not its answer, so without the result_id the citation of a different result could be returned. Opaque: pass it back unchanged.",
+            "maxLength": 256,
+            "minLength": 8,
+            "type": "string"
           }
         },
         "required": [
@@ -871,7 +881,7 @@
         "title": "ACR MCP source_evidence Request v1",
         "type": "object"
       },
-      "input_schema_digest": "sha256:a45df8147c3186d6724cd5d36b0eac10653aa76b8f36451122bb64ea861ad6fb",
+      "input_schema_digest": "sha256:893a4494ec2f1c3d7a053cfc71b574167910bc54fcd7dd4fdf32dd7a9d48b39f",
       "name": "source_evidence"
     }
   ]
