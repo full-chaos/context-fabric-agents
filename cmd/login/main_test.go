@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -67,6 +68,26 @@ func TestRun_DiscoveryFailure(t *testing.T) {
 	}
 }
 
+// lastDeviceScope records the scope form value the fake authorization server
+// last received on /device_authorization.
+var lastDeviceScope atomic.Value
+
+// TestRun_DefaultScopeRequestsDataRead pins the default scope request: the
+// login helper must ask for data:read together with the context and evidence
+// scopes, or a fresh login cannot call the direct data tools.
+func TestRun_DefaultScopeRequestsDataRead(t *testing.T) {
+	mcpURL := newFakeMCPAndAS(t, "test_token_scope_token")
+	lastDeviceScope.Store("")
+	var out, errOut bytes.Buffer
+	if code := run([]string{"--client", "stdout", "--mcp-url", mcpURL, "--timeout", "8s"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", code, errOut.String())
+	}
+	got, _ := lastDeviceScope.Load().(string)
+	if want := "context:read evidence:read data:read"; got != want {
+		t.Errorf("default requested scope = %q, want %q", got, want)
+	}
+}
+
 // newFakeMCPAndAS builds a full fake MCP + authorization server pair
 // implementing the whole discovery + register + device_authorization +
 // (one authorization_pending, then approve) chain, with certs trusted for
@@ -99,6 +120,8 @@ func newFakeMCPAndAS(t *testing.T, token string) (mcpURL string) {
 		writeJSONTest(w, map[string]any{"client_id": "test-client"})
 	})
 	asMux.HandleFunc("/device_authorization", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		lastDeviceScope.Store(r.PostForm.Get("scope"))
 		writeJSONTest(w, map[string]any{
 			"device_code": "dc123", "user_code": "AAAA-BBBB",
 			"verification_uri": asSrv.URL + "/activate", "verification_uri_complete": asSrv.URL + "/activate?user_code=AAAA-BBBB",

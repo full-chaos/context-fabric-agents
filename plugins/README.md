@@ -113,7 +113,7 @@ runs, and fails closed:
 | 401 | `missing_bearer` | No `Authorization` header reached the server | Set `ACR_MCP_TOKEN` before starting Claude Code |
 | 401 | `malformed_bearer` | The header is present but not a well-formed token (see [above](#if-acr_mcp_token-is-unset)) | Re-export a real token; check for stray quotes or whitespace |
 | 401 | `invalid_credential` | The token does not decode, or is expired or revoked | Get a new token ([docs/get-a-credential.md](../docs/get-a-credential.md)) |
-| 403 | `insufficient_scope` | The token is valid but not granted for this call | Ask the operator who minted it to widen the grant |
+| 403 | `insufficient_scope` | The token is valid but not granted for this call | Ask the operator who minted it to widen the grant. For an OAuth sign-in, sign in again so the client requests `data:read` |
 | 429 | `rate_limited` | Per-organization budget exceeded | Wait for the `Retry-After` seconds, then retry |
 
 A `502 upstream_incompatible` or `503 upstream_unavailable` means the

@@ -17,6 +17,8 @@ No LLM keys are stored in CI. Only unauthenticated and bearer connect checks run
 
 `acr-api credentials create --org-id <org> --name ci-context-fabric-agents-liveness --repository-scope <one repo> --scope context:read,evidence:read --expires-at <now+90d> --actor <who> --json`
 
+After the hosted MCP starts accepting `data:read`, the operator re-mints `ACR_MCP_CI_BEARER` with `--scope context:read,evidence:read,data:read`. No credential is stored in this repository.
+
 Write stdout (the token) to a mode-600 file, pipe it to `gh secret set ACR_MCP_CI_BEARER --repo full-chaos/context-fabric-agents`, then delete the file. Never print it.
 
 ## Rotate (every 90 days; open the reminder issue at day 75)
