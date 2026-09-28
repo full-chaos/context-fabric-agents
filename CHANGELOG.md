@@ -34,6 +34,11 @@ repo has shipped a `v1.0.0` release.
 ## [Unreleased] - 0.3.1
 
 - Mirror acr's signed per-product acr-mcp manifest (CHAOS-6236). `cmd/login` unchanged.
+- `cmd/login`: Windows build (`windows/amd64`, `windows/arm64`, `.exe`), a
+  Windows-native credential-loading path (bare-token file + one printed
+  interactive command, since PowerShell's default `ExecutionPolicy` blocks
+  running a `.ps1` script), and a `windows-latest` CI job that runs the
+  helper's real unit tests (CHAOS-7028). Docs, compatible fix.
 
 ## [Unreleased] - 0.3.0
 

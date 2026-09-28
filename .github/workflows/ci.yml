@@ -51,6 +51,37 @@ jobs:
       - name: go test (includes the secret and path guard)
         run: go test -count=1 ./...
 
+  test-windows-login:
+    # CHAOS-7028: the login helper (cmd/login, internal/devicelogin) is the
+    # one asset this repo cross-compiles for Windows. A cross-compile alone
+    # never proves the OS-specific paths (env-file shape, PowerShell
+    # quoting, PATHEXT/.cmd resolution) actually work -- this job builds
+    # AND runs the real unit tests on a real windows-latest runner. Scoped
+    # to the packages the login helper touches, not the whole module: the
+    # rest of this repo's tests were never vetted for Windows.
+    name: test-windows-login
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: go test (must execute at least one test; a silent zero-test pass is a failure, not a green)
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -count=1 -v ./cmd/login/... ./internal/devicelogin/... ./internal/render/... | tee test-output.log
+          ran=$(grep -Ec '^(--- PASS|--- FAIL)' test-output.log || true)
+          echo "tests executed: $ran"
+          if [ "$ran" -eq 0 ]; then
+            echo "::error::zero tests executed on windows-latest -- this must fail, not report green"
+            exit 1
+          fi
+
   codex-config:
     name: codex-config
     runs-on: ubuntu-latest

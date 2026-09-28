@@ -8,8 +8,9 @@ Release assets for tag `vX.Y.Z`:
 | Asset | Meaning |
 |---|---|
 | `context-fabric-agents-<client>-X.Y.Z.tar.gz` | One tarball per client (`claude-code`, `codex`, `opencode`, `cursor`, `vscode`) |
-| `SHA256SUMS` | SHA-256 of every tarball |
-| `<asset>.sig`, `<asset>.pem` | cosign signature and signing certificate for each tarball and for `SHA256SUMS` |
+| `context-fabric-agents-login-X.Y.Z-<os>-<arch>.bin` / `.exe` | The [`login`](login.md) device-grant helper — `linux`/`darwin` amd64+arm64 as `.bin`, `windows` amd64+arm64 as `.exe` |
+| `SHA256SUMS` | SHA-256 of every tarball and every `login` binary |
+| `<asset>.sig`, `<asset>.pem` | cosign signature and signing certificate for each asset above and for `SHA256SUMS` |
 
 Set these once:
 
@@ -24,6 +25,17 @@ gh release download "$TAG" --repo "$REPO" --dir release && cd release
 ```sh
 sha256sum --check --ignore-missing SHA256SUMS
 ```
+
+On Windows (PowerShell), `sha256sum` is not built in; compare a hash by
+hand instead:
+
+```powershell
+Get-FileHash -Algorithm SHA256 context-fabric-agents-login-<ver>-windows-amd64.exe
+```
+
+Compare the printed `Hash` value against the matching line in
+`SHA256SUMS` (case-insensitive; `Get-FileHash` prints upper case,
+`SHA256SUMS` lower case).
 
 ## 2. cosign signature
 
