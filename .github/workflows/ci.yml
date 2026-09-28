@@ -57,8 +57,16 @@ jobs:
     # never proves the OS-specific paths (env-file shape, PowerShell
     # quoting, PATHEXT/.cmd resolution) actually work -- this job builds
     # AND runs the real unit tests on a real windows-latest runner. Scoped
-    # to the packages the login helper touches, not the whole module: the
-    # rest of this repo's tests were never vetted for Windows.
+    # to cmd/login and internal/devicelogin only, NOT internal/render's own
+    # test suite: internal/render's committed-artifact drift checks and
+    # skill-frontmatter parser compare literal file bytes against files
+    # checked out with git's default Windows CRLF normalization, which is a
+    # pre-existing Windows-readiness gap in that package, unrelated to the
+    # login helper and out of this ticket's scope (reported separately).
+    # internal/devicelogin's own tests already exercise the render package
+    # functions the login helper actually calls (RenderCodexWithURL etc.)
+    # programmatically, with no checked-in-file comparison, so they are
+    # unaffected by that gap.
     name: test-windows-login
     runs-on: windows-latest
     permissions:
@@ -74,7 +82,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          go test -count=1 -v ./cmd/login/... ./internal/devicelogin/... ./internal/render/... | tee test-output.log
+          go test -count=1 -v ./cmd/login/... ./internal/devicelogin/... | tee test-output.log
           ran=$(grep -Ec '^(--- PASS|--- FAIL)' test-output.log || true)
           echo "tests executed: $ran"
           if [ "$ran" -eq 0 ]; then
