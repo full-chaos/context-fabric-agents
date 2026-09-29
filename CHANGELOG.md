@@ -31,6 +31,10 @@ calls "major" bumps the minor digit instead (`0.x.0 -> 0.(x+1).0`), per semver's
 "anything may change" rule for `0.y.z`. The bump becomes a real major (`1.0.0+`) once the
 repo has shipped a `v1.0.0` release.
 
+## [Unreleased] - 0.4.0
+
+- Skills and docs describe the new model-free data tools `data_catalog`, `find_subjects`, `read_facts`, `read_relationships` and the `acr://guide/data` resource (CHAOS-7103). Contract snapshot refreshed to acr c78c84b0; `investigate_question` now also accepts bare `receipt_id` strings in `prior_*_receipts` (additive). Tool added: `0.3.1 -> 0.4.0` per the release rule.
+
 ## [Unreleased] - 0.3.2
 
 - `cmd/login` now requests `data:read` by default (`context:read evidence:read data:read`) so a fresh sign-in can call the direct data tools (CHAOS-7103). Held for the acr release that accepts `data:read`. URL-only client configs declare no scope and take it from the server's `scopes_supported`.

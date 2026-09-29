@@ -1,6 +1,6 @@
 {
   "name": "dev-health",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Ask engineering delivery questions and retrieve cited evidence through the Dev Health hosted MCP server.",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
