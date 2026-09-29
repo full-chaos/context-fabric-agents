@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-28T11:43:50Z",
+  "captured_at": "2026-09-29T13:57:04Z",
   "host": "mcp.fullchaos.dev",
   "negotiations": [
     {
@@ -80,6 +80,10 @@
       "uri": "acr://guide/conversation"
     },
     {
+      "name": "guide-data",
+      "uri": "acr://guide/data"
+    },
+    {
       "name": "guide-questions",
       "uri": "acr://guide/questions"
     },
@@ -92,7 +96,7 @@
   "server_info": {
     "name": "dev-health-acr-mcp",
     "title": "Dev Health ACR",
-    "version": "0.1.1-main.cd41441b8dff89c69bd8aa5c6418fe00d4495d28"
+    "version": "0.1.1-main.c78c84b0a8b1e9d8a8103318c45ad4e5c6069a2f"
   },
   "tools": [
     {
@@ -246,7 +250,157 @@
       "name": "context_for_task"
     },
     {
-      "description_digest": "sha256:608784931bb56344a356cb3e1e96a837564e695d4872656ccd2bde348d37d43f",
+      "description_digest": "sha256:d50b8b34b59c35e243cd0198655a6e30f02df2c52afba3477e3f9177b81c7f8c",
+      "input_schema": {
+        "$id": "https://contracts.fullchaos.dev/acr/v1/mcp_data_catalog_request.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Input for the data_catalog tool. Every field is optional. No sections means every section.",
+        "examples": [
+          {
+            "sections": [
+              "operations",
+              "limits"
+            ]
+          }
+        ],
+        "properties": {
+          "sections": {
+            "description": "Which catalogue sections to return. Omit it for all of them: operations (the allowlisted run_operation operations for your credential, with variables, scope rules and limits), facts (not served in this release), subjects (subject kinds), relationships (relationship types and their end kinds) and limits (size and page bounds).",
+            "items": {
+              "enum": [
+                "operations",
+                "facts",
+                "subjects",
+                "relationships",
+                "limits"
+              ],
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "title": "ACR MCP data_catalog Request v1",
+        "type": "object"
+      },
+      "input_schema_digest": "sha256:ec0978a5e9dd2379c3682ce28afa64ec79b42d3cd36d49079867e1c7d2a1f6ff",
+      "name": "data_catalog"
+    },
+    {
+      "description_digest": "sha256:a6f21fa487f1b3b34f77e34d4266d933d3c4f2e2556765be8f2337dfe8893733",
+      "input_schema": {
+        "$id": "https://contracts.fullchaos.dev/acr/v1/mcp_find_subjects_request.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Input for the find_subjects tool. Four modes. List: pass kind alone to list the subjects of one kind. Name: pass query (and optionally kinds) to find subjects whose name, alias or provider key equals the query exactly. owned_by: pass a team canonical_id to list the repositories and projects the team owns (optionally kind or kinds, repository or project). handle: pass one pull request number, work item key or CI run id, for example \"PR 532\"; the handle names the kind. Every subject returned is one your credential may read.",
+        "examples": [
+          {
+            "kind": "repository"
+          },
+          {
+            "kinds": [
+              "repository"
+            ],
+            "query": "acme/payments"
+          },
+          {
+            "owned_by": "team:CHAOS"
+          },
+          {
+            "handle": "PR 532"
+          }
+        ],
+        "properties": {
+          "cursor": {
+            "description": "List mode: the next_cursor of the previous page, exactly as returned. It is a position, not permission: every page is checked again for your credential. Opaque: do not build or parse it.",
+            "maxLength": 700,
+            "minLength": 1,
+            "type": "string"
+          },
+          "handle": {
+            "description": "handle mode: exactly one pull request number (\"PR 532\"), work item key (only the key prefix this server recognises) or CI run id (\"run 18234567\"). A pull request number is per repository, so several subjects can match: the answer is then ambiguous with the ones you may read. Matches you may not read are not returned and not counted.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "description": "List mode: the subject kind to list, for example repository, team or project. Listing returns one page ordered by canonical_id; pass the returned next_cursor as cursor for the next page. In name mode it adds this kind to the kinds searched.",
+            "enum": [
+              "organization",
+              "team",
+              "project",
+              "repository",
+              "work_item",
+              "pull_request",
+              "deployment",
+              "incident",
+              "document",
+              "decision",
+              "episode",
+              "metric",
+              "pull_request_review",
+              "ci_pipeline_run",
+              "work_item_ref"
+            ],
+            "type": "string"
+          },
+          "kinds": {
+            "description": "Name mode: the subject kinds to search. Omit it to search repository, project and team. At most 8. Do not send kinds in list mode.",
+            "items": {
+              "enum": [
+                "organization",
+                "team",
+                "project",
+                "repository",
+                "work_item",
+                "pull_request",
+                "deployment",
+                "incident",
+                "document",
+                "decision",
+                "episode",
+                "metric",
+                "pull_request_review",
+                "ci_pipeline_run",
+                "work_item_ref"
+              ],
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "limit": {
+            "description": "Page size, 1 to 200. The default is 25. A larger value is lowered to 200.",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "owned_by": {
+            "description": "owned_by mode: the canonical_id of a team (copy it from another answer; never build one). Returns the repositories and projects the team owns now, each through the edge gate. A team you may not read gives the same empty answer as one that does not exist.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "query": {
+            "description": "Name mode: the exact name, alias or provider key of the subject you look for (case-insensitive), for example a repository slug such as acme/payments. It is an exact match, not a search phrase.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "title": "ACR MCP find_subjects Request v1",
+        "type": "object"
+      },
+      "input_schema_digest": "sha256:69497296efaf4c16862cff9b5762396641d93f400aef271b136cf39b0c16f90e",
+      "name": "find_subjects"
+    },
+    {
+      "description_digest": "sha256:c1341c7a4a1237541d1d7955f6ebb6bba299435958a126b58064435714356f6e",
       "input_schema": {
         "$defs": {
           "AnchorBoundReceipt": {
@@ -272,6 +426,47 @@
               "receipt_id"
             ],
             "type": "object"
+          },
+          "BareAnchorReceiptID": {
+            "description": "A bare receipt_id string. It is accepted only when parent_result_id is set in the same call; the receipt then carries parent_result_id as its result_id. It must start with ancr_.",
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^ancr_",
+            "type": "string"
+          },
+          "BareBoundSubjectReceiptID": {
+            "description": "A bare receipt_id string. It is accepted only when parent_result_id is set in the same call; the receipt then carries parent_result_id as its result_id. It is the receipt_id from the previous answer, unchanged.",
+            "maxLength": 256,
+            "minLength": 8,
+            "type": "string"
+          },
+          "BareCandidateReceiptID": {
+            "description": "A bare receipt_id string. It is accepted only when parent_result_id is set in the same call; the receipt then carries parent_result_id as its result_id. It must start with candr_.",
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^candr_",
+            "type": "string"
+          },
+          "BareHandleReceiptID": {
+            "description": "A bare receipt_id string. It is accepted only when parent_result_id is set in the same call; the receipt then carries parent_result_id as its result_id. It must start with handr_.",
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^handr_",
+            "type": "string"
+          },
+          "BareKindReceiptID": {
+            "description": "A bare receipt_id string. It is accepted only when parent_result_id is set in the same call; the receipt then carries parent_result_id as its result_id. It must start with kindr_.",
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^kindr_",
+            "type": "string"
+          },
+          "BareWindowReceiptID": {
+            "description": "A bare receipt_id string. It is accepted only when parent_result_id is set in the same call; the receipt then carries parent_result_id as its result_id. It must start with winr_.",
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^winr_",
+            "type": "string"
           },
           "BoundSubjectReceipt": {
             "additionalProperties": false,
@@ -662,6 +857,11 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "description": "Input for the investigate_question tool. Only question is required. Ask in plain language about one subject (a team, project, repository, pull request, incident) or about a set of them. Everything else is optional: leave scope, expected_kinds, subject_handles and windows out unless you already hold exact values, and let the service resolve names from the question. Follow-up turns pass back the receipts and result_id from the previous answer. This tool always investigates current state; use evidence_window to ask about a period. If a full_result does not fit the byte budget it is dropped and projection_budget.full_result_omitted is set; fetch it with investigation_result (if this server offers it) and the returned result_id.",
+        "else": {
+          "required": [
+            "parent_result_id"
+          ]
+        },
         "examples": [
           {
             "question": "Which teams look most under strain this month?"
@@ -699,6 +899,40 @@
             "question": "Use the trailing 90 days"
           }
         ],
+        "if": {
+          "properties": {
+            "prior_anchor_receipts": {
+              "items": {
+                "type": "object"
+              }
+            },
+            "prior_candidate_receipts": {
+              "items": {
+                "type": "object"
+              }
+            },
+            "prior_handle_receipts": {
+              "items": {
+                "type": "object"
+              }
+            },
+            "prior_kind_receipts": {
+              "items": {
+                "type": "object"
+              }
+            },
+            "prior_subject_receipts": {
+              "items": {
+                "type": "object"
+              }
+            },
+            "prior_window_receipts": {
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
         "properties": {
           "allow_clarification": {
             "description": "Optional. When true or omitted, the service may return status clarification_required with structure_needs that list the choices it needs from you. Set false to get the best available answer instead of a question back.",
@@ -740,49 +974,91 @@
             "type": "string"
           },
           "prior_anchor_receipts": {
-            "description": "Answers a clarification about which named subject you meant. Take the receipt_id (starts with ancr_) of the option you choose from structure_needs.anchor_options. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from.",
+            "description": "Answers a clarification about which named subject you meant. Take the receipt_id (starts with ancr_) of the option you choose from structure_needs.anchor_options. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from. Each entry may also be the bare receipt_id string; then parent_result_id is required and is used as that receipt's result_id.",
             "items": {
-              "$ref": "#/$defs/AnchorBoundReceipt"
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/AnchorBoundReceipt"
+                },
+                {
+                  "$ref": "#/$defs/BareAnchorReceiptID"
+                }
+              ]
             },
             "maxItems": 20,
             "type": "array"
           },
           "prior_candidate_receipts": {
-            "description": "Chooses among candidate subjects the service offered when several matched. Take the receipt_id (starts with candr_) of the option you choose from structure_needs.candidate_options. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from.",
+            "description": "Chooses among candidate subjects the service offered when several matched. Take the receipt_id (starts with candr_) of the option you choose from structure_needs.candidate_options. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from. Each entry may also be the bare receipt_id string; then parent_result_id is required and is used as that receipt's result_id.",
             "items": {
-              "$ref": "#/$defs/CandidateBoundReceipt"
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CandidateBoundReceipt"
+                },
+                {
+                  "$ref": "#/$defs/BareCandidateReceiptID"
+                }
+              ]
             },
             "maxItems": 20,
             "type": "array"
           },
           "prior_handle_receipts": {
-            "description": "Confirms an identifier the service offered, such as a pull request number. Take the receipt_id (starts with handr_) of the option you choose from structure_needs.handle_options. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from.",
+            "description": "Confirms an identifier the service offered, such as a pull request number. Take the receipt_id (starts with handr_) of the option you choose from structure_needs.handle_options. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from. Each entry may also be the bare receipt_id string; then parent_result_id is required and is used as that receipt's result_id.",
             "items": {
-              "$ref": "#/$defs/HandleBoundReceipt"
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/HandleBoundReceipt"
+                },
+                {
+                  "$ref": "#/$defs/BareHandleReceiptID"
+                }
+              ]
             },
             "maxItems": 20,
             "type": "array"
           },
           "prior_kind_receipts": {
-            "description": "Answers a clarification about what kind of thing you meant. Take the receipt_id (starts with kindr_) of the kind option you choose from structure_needs.kind_options. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from.",
+            "description": "Answers a clarification about what kind of thing you meant. Take the receipt_id (starts with kindr_) of the kind option you choose from structure_needs.kind_options. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from. Each entry may also be the bare receipt_id string; then parent_result_id is required and is used as that receipt's result_id.",
             "items": {
-              "$ref": "#/$defs/KindBoundReceipt"
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/KindBoundReceipt"
+                },
+                {
+                  "$ref": "#/$defs/BareKindReceiptID"
+                }
+              ]
             },
             "maxItems": 20,
             "type": "array"
           },
           "prior_subject_receipts": {
-            "description": "Confirms subjects a previous answer committed to, so this turn keeps investigating the same subjects. Take entries from that answer's subject_receipts. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from.",
+            "description": "Confirms subjects a previous answer committed to, so this turn keeps investigating the same subjects. Take entries from that answer's subject_receipts. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from. Each entry may also be the bare receipt_id string; then parent_result_id is required and is used as that receipt's result_id.",
             "items": {
-              "$ref": "#/$defs/BoundSubjectReceipt"
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/BoundSubjectReceipt"
+                },
+                {
+                  "$ref": "#/$defs/BareBoundSubjectReceiptID"
+                }
+              ]
             },
             "maxItems": 20,
             "type": "array"
           },
           "prior_window_receipts": {
-            "description": "Confirms a time window the service offered. Take the receipt_id (starts with winr_) of the option you choose from structure_needs.window_options. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from.",
+            "description": "Confirms a time window the service offered. Take the receipt_id (starts with winr_) of the option you choose from structure_needs.window_options. Receipts returned by the previous answer. Copy each entry unchanged from that answer, with the result_id it came from. Each entry may also be the bare receipt_id string; then parent_result_id is required and is used as that receipt's result_id.",
             "items": {
-              "$ref": "#/$defs/WindowBoundReceipt"
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/WindowBoundReceipt"
+                },
+                {
+                  "$ref": "#/$defs/BareWindowReceiptID"
+                }
+              ]
             },
             "maxItems": 20,
             "type": "array"
@@ -817,7 +1093,7 @@
         "title": "ACR MCP investigate_question Request v1",
         "type": "object"
       },
-      "input_schema_digest": "sha256:13c1be077e4eabc2fdea2f944be18175787b12be68a21ad63bf4728272c75892",
+      "input_schema_digest": "sha256:d588c0da4b746498d141bbb6434dd497d76277de4e3a1acdc682ec1a153b952b",
       "name": "investigate_question"
     },
     {
@@ -848,6 +1124,247 @@
       },
       "input_schema_digest": "sha256:da92f58ed993f83ac58b09184fa538d6c0e7d00ef6f692860b15907abd650517",
       "name": "investigation_result"
+    },
+    {
+      "description_digest": "sha256:765cceb7fb2ca067fa578712fe88c106dd379d878768fab243b66545bdd33b3d",
+      "input_schema": {
+        "$id": "https://contracts.fullchaos.dev/acr/v1/mcp_read_facts_request.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Input for the read_facts tool: fact kinds, canonical subjects and an optional window.",
+        "examples": [
+          {
+            "kinds": [
+              "investment_distribution"
+            ],
+            "max_bytes": 65536,
+            "subjects": [
+              {
+                "canonical_id": "team-payments",
+                "kind": "team"
+              }
+            ],
+            "tables": "include",
+            "window": {
+              "days": 30,
+              "mode": "trailing"
+            }
+          }
+        ],
+        "properties": {
+          "kinds": {
+            "description": "Fact kinds to read (1 to 8). A kind the server does not serve is refused by name in the response.",
+            "items": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "max_bytes": {
+            "default": 65536,
+            "description": "Bound on the serialized response. Facts over the bound are left out and named in truncation; coverage is never cut.",
+            "maximum": 262144,
+            "minimum": 4096,
+            "type": "integer"
+          },
+          "subjects": {
+            "description": "Canonical subjects to read (1 to 25), as returned by other tools. A subject you may not read and one that does not exist give the same answer.",
+            "items": {
+              "additionalProperties": false,
+              "description": "A canonical subject reference, as returned by other tools. Never build or guess one.",
+              "properties": {
+                "canonical_id": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "kind": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "canonical_id"
+              ],
+              "type": "object"
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "type": "array"
+          },
+          "tables": {
+            "description": "include (default) returns fields and tables; omit returns fields only; only returns tables only.",
+            "enum": [
+              "include",
+              "omit",
+              "only"
+            ]
+          },
+          "window": {
+            "additionalProperties": false,
+            "description": "Time window. Omit it and each kind answers over its own default period; the response says so.",
+            "properties": {
+              "as_of": {
+                "description": "Point in time, not in the future. Only with mode as_of.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "days": {
+                "description": "Trailing days. Only with mode trailing. A range or trailing window spans at most 60 days.",
+                "maximum": 60,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "end": {
+                "description": "Range end, after start. Only with mode range.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "mode": {
+                "description": "current takes nothing else; as_of takes as_of; range takes start and end; trailing takes days.",
+                "enum": [
+                  "current",
+                  "as_of",
+                  "range",
+                  "trailing"
+                ]
+              },
+              "start": {
+                "description": "Range start. Only with mode range.",
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "kinds",
+          "subjects"
+        ],
+        "title": "ACR MCP read_facts Request v1",
+        "type": "object"
+      },
+      "input_schema_digest": "sha256:67a77a53868746ecfd230a01f9ac630137f90f55117e8aaa8ff5b64742a48874",
+      "name": "read_facts"
+    },
+    {
+      "description_digest": "sha256:6f5d01b9b2d53b39a69e8c920bc2b61715fd07cb448ab24215686f3d6bcc7148",
+      "input_schema": {
+        "$id": "https://contracts.fullchaos.dev/acr/v1/mcp_read_relationships_request.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Input for the read_relationships tool: one canonical subject, optional relation types, direction, depth, time point and page controls.",
+        "examples": [
+          {
+            "depth": 1,
+            "direction": "both",
+            "limit": 50,
+            "subject": {
+              "canonical_id": "repo-payments-api",
+              "kind": "repository"
+            },
+            "types": [
+              "BELONGS_TO_PROJECT",
+              "OWNED_BY_TEAM"
+            ]
+          }
+        ],
+        "properties": {
+          "as_of": {
+            "description": "RFC 3339 time point. Omit it to read current edges.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "The page.next_cursor of the previous page of the same request. Send the same other fields.",
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "depth": {
+            "description": "1 reads the subject's own edges; 2 also reads the edges of its visible neighbours. Default 1.",
+            "maximum": 2,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "direction": {
+            "description": "out follows edges that leave the subject, in follows edges that arrive at it, both follows either. Default both.",
+            "enum": [
+              "out",
+              "in",
+              "both"
+            ]
+          },
+          "limit": {
+            "description": "Edges per page (1 to 100). Default 50.",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "subject": {
+            "additionalProperties": false,
+            "description": "The one subject whose edges are read. Take it from find_subjects. A subject you may not read and one that does not exist give the same answer.",
+            "properties": {
+              "canonical_id": {
+                "description": "Canonical id, as returned by find_subjects. Never build or guess one.",
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "description": "Subject kind, as returned by find_subjects.",
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "canonical_id"
+            ],
+            "type": "object"
+          },
+          "types": {
+            "description": "Relation types to read. Omit it to read every type.",
+            "items": {
+              "enum": [
+                "BELONGS_TO_PROJECT",
+                "BELONGS_TO_PULL_REQUEST",
+                "BELONGS_TO_REPOSITORY",
+                "BLOCKS",
+                "CORRELATED_WITH_INCIDENT",
+                "DOCUMENTED_BY",
+                "DUPLICATES",
+                "HAS_EPISODE",
+                "OWNED_BY_TEAM",
+                "PART_OF",
+                "RELATED_TO",
+                "RELATES_TO"
+              ]
+            },
+            "maxItems": 12,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "subject"
+        ],
+        "title": "ACR MCP read_relationships Request v1",
+        "type": "object"
+      },
+      "input_schema_digest": "sha256:7b38a9c859854ccbba9bdbf3a9dac9b6c8f9585e3909e160a373af30cd94d46b",
+      "name": "read_relationships"
     },
     {
       "description_digest": "sha256:2d451fdf1112db2ce87915a26b011e2551fdb66db4aac5cc3466a91439d15cd3",
