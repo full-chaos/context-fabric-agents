@@ -21,7 +21,7 @@ If you are a model, you can plan the reads yourself and do the comparison, ranki
 
 1. Call `data_catalog` first. It says what you may ask: operations, subject kinds, relationship types and limits. `sections` is optional; omit it for all sections.
 2. Call `find_subjects` to turn names into canonical ids. Four modes: list (`kind` alone, paged with `cursor`), name (`query`, exact match, optional `kinds`), `owned_by` (a team `canonical_id`; returns the repositories and projects it owns) and `handle` (one pull request number, work item key or CI run id, for example `PR 532`). Never build an id; copy it unchanged from `find_subjects` or another answer.
-3. Call `read_facts` with `kinds` and `subjects` (canonical ids, 1 to 25) and an optional `window`. Call `read_relationships` with one `subject` (`kind` and `canonical_id` from `find_subjects`) and optional `types`, `direction`, `depth` (1 or 2), `as_of`, `limit`.
+3. Call `read_facts` with `kinds` and `subjects` (1 to 25 objects, each `{"kind", "canonical_id"}` copied from `find_subjects`, never a bare id string) and an optional `window`. Call `read_relationships` with one `subject` (`kind` and `canonical_id` from `find_subjects`) and optional `types`, `direction`, `depth` (1 or 2), `as_of`, `limit`.
 4. A `cursor` or `next_cursor` is opaque. Send it back unchanged with the same other fields. Never build or parse it.
 5. Restricted callers get counts, not rows, for what they may not read: read counters such as `edges_not_visible` and `rows_withheld`. A subject you may not read looks the same as one that does not exist.
 6. `run_operation` is not served yet. It will need the `data:read` scope.

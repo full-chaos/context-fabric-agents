@@ -74,7 +74,8 @@ when the server enables it for your credential.
 2. `find_subjects`: names to canonical ids. Modes: list (`kind`), name
    (`query`), `owned_by` (a team `canonical_id`) and `handle` (`"PR 532"`).
    Never build an id.
-3. `read_facts` (`kinds`, `subjects`, optional `window`) and
+3. `read_facts` (`kinds`; `subjects` as objects `{"kind", "canonical_id"}`; optional
+   `window`) and
    `read_relationships` (one `subject`, optional `types`, `direction`,
    `depth`, `as_of`, `limit`). A `cursor` is opaque: send it back unchanged.
    Restricted credentials get counts for what they may not read
