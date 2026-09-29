@@ -45,7 +45,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	mcpURL := fs.String("mcp-url", render.RemoteURL, "hosted MCP endpoint to sign in to")
 	clientFlag := fs.String("client", "", fmt.Sprintf("where to write the token: %s", joinTargets()))
-	scope := fs.String("scope", "context:read evidence:read", "space-separated OAuth scopes to request")
+	scope := fs.String("scope", "context:read evidence:read data:read", "space-separated OAuth scopes to request")
 	timeout := fs.Duration("timeout", 15*time.Minute, "give up waiting for approval after this long (also bounded by the server's own device-code expiry)")
 	insecureLoopback := fs.Bool("insecure-loopback", false, "allow http:// (never https) for --mcp-url and every discovered endpoint, ONLY on a loopback host (127.0.0.1/::1/localhost) -- for local testing against a dev server; a bearer token is never sent over plain http anywhere else")
 	fs.Usage = func() {

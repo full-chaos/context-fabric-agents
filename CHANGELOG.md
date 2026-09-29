@@ -31,6 +31,10 @@ calls "major" bumps the minor digit instead (`0.x.0 -> 0.(x+1).0`), per semver's
 "anything may change" rule for `0.y.z`. The bump becomes a real major (`1.0.0+`) once the
 repo has shipped a `v1.0.0` release.
 
+## [Unreleased] - 0.3.2
+
+- `cmd/login` now requests `data:read` by default (`context:read evidence:read data:read`) so a fresh sign-in can call the direct data tools (CHAOS-7103). Held for the acr release that accepts `data:read`. URL-only client configs declare no scope and take it from the server's `scopes_supported`.
+
 ## [Unreleased] - 0.3.1
 
 - Mirror acr's signed per-product acr-mcp manifest (CHAOS-6236). `cmd/login` unchanged.
