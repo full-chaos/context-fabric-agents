@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-29T13:57:04Z",
+  "captured_at": "2026-10-03T10:26:44Z",
   "host": "mcp.fullchaos.dev",
   "negotiations": [
     {
@@ -96,7 +96,7 @@
   "server_info": {
     "name": "dev-health-acr-mcp",
     "title": "Dev Health ACR",
-    "version": "0.1.1-main.c78c84b0a8b1e9d8a8103318c45ad4e5c6069a2f"
+    "version": "0.1.1-main.25840b008131a961bcd129f1190bc79a053ac949"
   },
   "tools": [
     {
@@ -133,21 +133,35 @@
             "description": "Optional size limits for the packet. Each value is clamped to what the service allows for your credential, so you can only ask for less than the maximum, never more.",
             "properties": {
               "max_items": {
-                "description": "Maximum number of ranked context items, 1 to 50.",
+                "description": "Maximum number of ranked context items, 1 to 50. 0 means not set (the default applies).",
                 "maximum": 50,
-                "minimum": 1,
+                "minimum": 0,
                 "type": "integer"
               },
               "max_output_tokens": {
-                "description": "Approximate token ceiling for the packet, 500 to 16000.",
+                "anyOf": [
+                  {
+                    "const": 0
+                  },
+                  {
+                    "minimum": 500
+                  }
+                ],
+                "description": "Approximate token ceiling for the packet, 500 to 16000. 0 means not set (the default applies).",
                 "maximum": 16000,
-                "minimum": 500,
                 "type": "integer"
               },
               "max_serialized_bytes": {
-                "description": "Byte ceiling for the whole serialized response, 8192 to 1048576. Content that does not fit is dropped, never cut mid-document.",
+                "anyOf": [
+                  {
+                    "const": 0
+                  },
+                  {
+                    "minimum": 8192
+                  }
+                ],
+                "description": "Byte ceiling for the whole serialized response, 8192 to 1048576. Content that does not fit is dropped, never cut mid-document. 0 means not set (the default applies).",
                 "maximum": 1048576,
-                "minimum": 8192,
                 "type": "integer"
               }
             },
@@ -231,9 +245,9 @@
                 "type": "string"
               },
               "time_window_days": {
-                "description": "How many trailing days of history to consider, from 1 to 365. Optional; omitted uses the service default.",
+                "description": "How many trailing days of history to consider, from 1 to 365. Optional; omitted uses the service default. 0 means not set (the default applies).",
                 "maximum": 365,
-                "minimum": 1,
+                "minimum": 0,
                 "type": "integer"
               }
             },
@@ -246,11 +260,11 @@
         "title": "ACR MCP context_for_task Request v1",
         "type": "object"
       },
-      "input_schema_digest": "sha256:96ec43cc057f355ff1947bff434e1ff7765757669b40bf705d57fe152db7cb70",
+      "input_schema_digest": "sha256:4d0bb1ff70b102dc3ca0c79d76354c29820aecd12aa1323ccf687e230d0702fd",
       "name": "context_for_task"
     },
     {
-      "description_digest": "sha256:d50b8b34b59c35e243cd0198655a6e30f02df2c52afba3477e3f9177b81c7f8c",
+      "description_digest": "sha256:9e473afaff87782d38b38abefdfc2442687a1d5d9f316ddb062d38ad9d6ececb",
       "input_schema": {
         "$id": "https://contracts.fullchaos.dev/acr/v1/mcp_data_catalog_request.v1.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -266,18 +280,19 @@
         ],
         "properties": {
           "sections": {
-            "description": "Which catalogue sections to return. Omit it for all of them: operations (the allowlisted run_operation operations for your credential, with variables, scope rules and limits), facts (not served in this release), subjects (subject kinds), relationships (relationship types and their end kinds) and limits (size and page bounds).",
+            "description": "Which catalogue sections to return. Omit it for all of them: operations (the allowlisted run_operation operations for your credential, with variables, scope rules and limits), facts (the fact kinds read_facts serves), subjects (subject kinds), relationships (relationship types and their end kinds) limits (size and page bounds) and schema (the allowed part of the ops GraphQL schema that graphql_query accepts for your credential).",
             "items": {
               "enum": [
                 "operations",
                 "facts",
                 "subjects",
                 "relationships",
-                "limits"
+                "limits",
+                "schema"
               ],
               "type": "string"
             },
-            "maxItems": 5,
+            "maxItems": 6,
             "minItems": 1,
             "type": "array",
             "uniqueItems": true
@@ -286,11 +301,11 @@
         "title": "ACR MCP data_catalog Request v1",
         "type": "object"
       },
-      "input_schema_digest": "sha256:ec0978a5e9dd2379c3682ce28afa64ec79b42d3cd36d49079867e1c7d2a1f6ff",
+      "input_schema_digest": "sha256:3b266dc37fb854c9024c02f0261290684427ef9e71a36d3ab6d6c504c89f8339",
       "name": "data_catalog"
     },
     {
-      "description_digest": "sha256:a6f21fa487f1b3b34f77e34d4266d933d3c4f2e2556765be8f2337dfe8893733",
+      "description_digest": "sha256:89f856766a52035a9130c284b1f9d654988e96253645d3d728f19393e13d7e13",
       "input_schema": {
         "$id": "https://contracts.fullchaos.dev/acr/v1/mcp_find_subjects_request.v1.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -314,6 +329,27 @@
           }
         ],
         "properties": {
+          "anchor": {
+            "additionalProperties": false,
+            "description": "handle mode only: a repository (for a pull request number or CI run id) or a project (for a work item key) that narrows the handle to one subject. Any other pairing is refused. kind and id come together. The anchor is checked for your credential like any subject; one you may not read, or that does not exist, gives the same empty answer as an anchor with no match.",
+            "properties": {
+              "id": {
+                "description": "The canonical_id of the repository or project (copy it from another answer; never build one).",
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "description": "The anchor subject kind: repository or project.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
           "cursor": {
             "description": "List mode: the next_cursor of the previous page, exactly as returned. It is a position, not permission: every page is checked again for your credential. Opaque: do not build or parse it.",
             "maxLength": 700,
@@ -321,7 +357,7 @@
             "type": "string"
           },
           "handle": {
-            "description": "handle mode: exactly one pull request number (\"PR 532\"), work item key (only the key prefix this server recognises) or CI run id (\"run 18234567\"). A pull request number is per repository, so several subjects can match: the answer is then ambiguous with the ones you may read. Matches you may not read are not returned and not counted.",
+            "description": "handle mode: exactly one pull request number (\"PR 532\"), work item key of any prefix (a letter, up to 31 letters or digits, a dash, digits; your organization's own work items decide whether it exists) or CI run id (\"run 18234567\"). A pull request number is per repository, so several subjects can match: the answer is then ambiguous with the ones you may read. Matches you may not read are not returned and not counted.",
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
@@ -375,9 +411,9 @@
             "uniqueItems": true
           },
           "limit": {
-            "description": "Page size, 1 to 200. The default is 25. A larger value is lowered to 200.",
+            "description": "Page size, 1 to 200. The default is 25. A larger value is refused. 0 means not set (the default applies).",
             "maximum": 200,
-            "minimum": 1,
+            "minimum": 0,
             "type": "integer"
           },
           "owned_by": {
@@ -396,7 +432,7 @@
         "title": "ACR MCP find_subjects Request v1",
         "type": "object"
       },
-      "input_schema_digest": "sha256:69497296efaf4c16862cff9b5762396641d93f400aef271b136cf39b0c16f90e",
+      "input_schema_digest": "sha256:872c24d43b9fcd5b453effa9aee0eee06786b18ced7573b3720bcae427ae588e",
       "name": "find_subjects"
     },
     {
@@ -582,27 +618,34 @@
             "description": "Optional limits on the size of the answer. Omitted fields take an agent-appropriate default, and every field is clamped to what the service grants your credential.",
             "properties": {
               "max_cohort_members": {
-                "description": "Maximum number of members to list when the answer is about a cohort, 1 to 250.",
+                "description": "Maximum number of members to list when the answer is about a cohort, 1 to 250. 0 means not set (the default applies).",
                 "maximum": 250,
-                "minimum": 1,
+                "minimum": 0,
                 "type": "integer"
               },
               "max_drivers": {
-                "description": "Maximum number of principal drivers to return, 1 to 50.",
+                "description": "Maximum number of principal drivers to return, 1 to 50. 0 means not set (the default applies).",
                 "maximum": 50,
-                "minimum": 1,
+                "minimum": 0,
                 "type": "integer"
               },
               "max_evidence_refs": {
-                "description": "Maximum number of evidence references to return, 1 to 500.",
+                "description": "Maximum number of evidence references to return, 1 to 500. 0 means not set (the default applies).",
                 "maximum": 500,
-                "minimum": 1,
+                "minimum": 0,
                 "type": "integer"
               },
               "max_serialized_bytes": {
-                "description": "Byte ceiling for the whole serialized response, 8192 to 1048576. Content that does not fit is dropped, never truncated into invalid JSON.",
+                "anyOf": [
+                  {
+                    "const": 0
+                  },
+                  {
+                    "minimum": 8192
+                  }
+                ],
+                "description": "Byte ceiling for the whole serialized response, 8192 to 1048576. Content that does not fit is dropped, never truncated into invalid JSON. 0 means not set (the default applies).",
                 "maximum": 1048576,
-                "minimum": 8192,
                 "type": "integer"
               }
             },
@@ -799,7 +842,7 @@
             "type": "object"
           },
           "SubjectKind": {
-            "description": "The kinds of subject the service knows: organization, team, project, repository, work_item (a ticket or issue), pull_request, deployment, incident, document, decision, episode (a recorded agent run), metric, pull_request_review, ci_pipeline_run and work_item_ref (a work item known only by a reference). All are accepted on the wire; only team, project, repository, incident and pull_request can be discovered as a cohort. work_item_ref is never answered on its own.",
+            "description": "The kinds of subject the service knows: organization, team, project, repository, work_item (a ticket or issue), pull_request, deployment, incident, document, decision, episode (a recorded agent run), metric, pull_request_review, ci_pipeline_run and work_item_ref (a work item known only by a reference). All are accepted on the wire; only team, project, repository, incident and pull_request can be discovered as a cohort, and deployment only as the members of a named repository or team. work_item_ref is never answered on its own.",
             "enum": [
               "organization",
               "team",
@@ -955,7 +998,7 @@
             "description": "Optional period the answer should cover. Give either relative_id (trailing_30d, trailing_90d, trailing_365d or all_time) or both start and end. This is your stated intent and is used as given; the service reports the window it used (see effective_evidence_window)."
           },
           "expected_kinds": {
-            "description": "Optional hint about what kinds of subject the question is about, for example [\"team\"] or [\"pull_request\"]. Use it when the question is ambiguous about kind. It states your intent, not a fact about any subject. Every value in the SubjectKind list is accepted, but only team, project, repository, incident and pull_request can be discovered as a cohort (a \"which ...\" question over many); other kinds are answered when you name the specific subject.",
+            "description": "Optional hint about what kinds of subject the question is about, for example [\"team\"] or [\"pull_request\"]. Use it when the question is ambiguous about kind. It states your intent, not a fact about any subject. Every value in the SubjectKind list is accepted, but only team, project, repository, incident and pull_request can be discovered as a cohort (a \"which ...\" question over many), and deployment only as the members of a named repository or team; other kinds are answered when you name the specific subject.",
             "items": {
               "$ref": "#/$defs/SubjectKind"
             },
@@ -1093,7 +1136,7 @@
         "title": "ACR MCP investigate_question Request v1",
         "type": "object"
       },
-      "input_schema_digest": "sha256:d588c0da4b746498d141bbb6434dd497d76277de4e3a1acdc682ec1a153b952b",
+      "input_schema_digest": "sha256:feac1088f5f3c3b5bf76edb8141d63970a9caba812b5190a1ee091dcaae52590",
       "name": "investigate_question"
     },
     {
@@ -1165,10 +1208,17 @@
             "uniqueItems": true
           },
           "max_bytes": {
+            "anyOf": [
+              {
+                "const": 0
+              },
+              {
+                "minimum": 4096
+              }
+            ],
             "default": 65536,
-            "description": "Bound on the serialized response. Facts over the bound are left out and named in truncation; coverage is never cut.",
+            "description": "Bound on the serialized response, 4096 to 262144. 0 or absent means the default, 65536. Facts over the bound are left out and named in truncation; coverage is never cut.",
             "maximum": 262144,
-            "minimum": 4096,
             "type": "integer"
           },
           "subjects": {
@@ -1216,9 +1266,9 @@
                 "type": "string"
               },
               "days": {
-                "description": "Trailing days. Only with mode trailing. A range or trailing window spans at most 60 days.",
+                "description": "Trailing days. Only with mode trailing. A range or trailing window spans at most 60 days. 0 means not set, the same as leaving it out: a trailing window needs days from 1 to 60.",
                 "maximum": 60,
-                "minimum": 1,
+                "minimum": 0,
                 "type": "integer"
               },
               "end": {
@@ -1254,7 +1304,7 @@
         "title": "ACR MCP read_facts Request v1",
         "type": "object"
       },
-      "input_schema_digest": "sha256:67a77a53868746ecfd230a01f9ac630137f90f55117e8aaa8ff5b64742a48874",
+      "input_schema_digest": "sha256:5a3937acb6ad23813b9e2c0b291efc2a8ab03f6505ab4613ad88fb2ffd59e23b",
       "name": "read_facts"
     },
     {
@@ -1292,9 +1342,9 @@
             "type": "string"
           },
           "depth": {
-            "description": "1 reads the subject's own edges; 2 also reads the edges of its visible neighbours. Default 1.",
+            "description": "1 reads the subject's own edges; 2 also reads the edges of its visible neighbours. Default 1. 0 means not set (the default applies).",
             "maximum": 2,
-            "minimum": 1,
+            "minimum": 0,
             "type": "integer"
           },
           "direction": {
@@ -1306,9 +1356,9 @@
             ]
           },
           "limit": {
-            "description": "Edges per page (1 to 100). Default 50.",
+            "description": "Edges per page (1 to 100). Default 50. 0 means not set (the default applies).",
             "maximum": 100,
-            "minimum": 1,
+            "minimum": 0,
             "type": "integer"
           },
           "subject": {
@@ -1363,7 +1413,7 @@
         "title": "ACR MCP read_relationships Request v1",
         "type": "object"
       },
-      "input_schema_digest": "sha256:7b38a9c859854ccbba9bdbf3a9dac9b6c8f9585e3909e160a373af30cd94d46b",
+      "input_schema_digest": "sha256:a372bfc7d22ef79484489ea7c522c4b1948d2d889968b1f51a050ce7c91b1070",
       "name": "read_relationships"
     },
     {
