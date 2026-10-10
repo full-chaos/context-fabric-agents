@@ -205,6 +205,18 @@ func TestProbeSnapshotWithExtraToolIsRed(t *testing.T) {
 	}
 }
 
+func TestProbeContractFailureNamesBothVersions(t *testing.T) {
+	ts := newFake(t, fakeOpts{})
+	s := pin(t, ts)
+	s.ServerInfo.Version = "0.0.1-old"
+	s.Tools[0].InputSchemaDigest = "sha256:deadbeef"
+	r := run(t, cfg(ts, s))
+	wantOnlyFailing(t, r, StepContract)
+	if d := step(t, r, StepContract).Detail; !strings.HasPrefix(d, "snapshot taken at 0.0.1-old, served 9.9.9: live contract != snapshot: differs: tool ") {
+		t.Errorf("detail = %q", d)
+	}
+}
+
 func TestProbeSchemaDigestChangeIsRed(t *testing.T) {
 	ts := newFake(t, fakeOpts{})
 	s := pin(t, ts)

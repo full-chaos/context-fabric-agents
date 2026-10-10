@@ -35,7 +35,7 @@ once after 30 s.
 | --- | --- |
 | `a_discover` | first request is `server/discover`; negotiated `2026-07-28`; equals the snapshot's pinned negotiation |
 | `b_initialize` | first request is `initialize`; negotiated `2025-06-18`; equals the snapshot's pinned negotiation |
-| `c_contract` | tool names + input-schema digests, resource names + URIs and prompt names equal `contracts/acr-mcp/snapshot.json` |
+| `c_contract` | tool names + input-schema digests, resource names + URIs and prompt names equal `contracts/acr-mcp/snapshot.json`; a failure reads `snapshot taken at <version>, served <version>: ...` followed by the diff. Refresh the snapshot after every served-contract change (merge the `contract-drift` PR, or see `contracts/acr-mcp/README.md`) |
 | `d_context` | `context_for_task` on the granted repository returns a packet (`context_packet_id`); a tool error (for example `repo_forbidden`) fails |
 | `e_unauth` | an unauthenticated POST is 401 with one `Bearer` challenge; a `resource_metadata` parameter must be this host's `/.well-known/oauth-protected-resource` over https |
 
