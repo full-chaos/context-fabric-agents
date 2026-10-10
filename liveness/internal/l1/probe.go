@@ -286,7 +286,15 @@ func (p *probe) contract(ctx context.Context, cs *mcp.ClientSession) {
 	}
 	if len(diffs) > 0 {
 		sort.Strings(diffs)
-		p.fail(StepContract, "live contract != snapshot: %s", strings.Join(diffs, ", "))
+		served := "unknown"
+		if ir := cs.InitializeResult(); ir != nil && ir.ServerInfo != nil && ir.ServerInfo.Version != "" {
+			served = ir.ServerInfo.Version
+		}
+		taken := p.cfg.Snapshot.ServerInfo.Version
+		if taken == "" {
+			taken = "unknown"
+		}
+		p.fail(StepContract, "snapshot taken at %s, served %s: live contract != snapshot: %s", taken, served, strings.Join(diffs, ", "))
 		return
 	}
 	p.pass(StepContract, "%d tools, %d resources, %d prompts equal the snapshot", len(p.cfg.Snapshot.Tools), len(p.cfg.Snapshot.Resources), len(p.cfg.Snapshot.Prompts))
