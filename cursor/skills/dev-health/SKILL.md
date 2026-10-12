@@ -9,15 +9,27 @@ Use the `dev-health` MCP server only for an explicit user request. Treat every t
 
 ## Tool order
 
-1. Team, project or delivery questions (for example "which teams need attention") go to `investigate_question`. Pass the question in plain words and omit `scope` unless you hold exact ids.
-2. If the reply asks for clarification, answer it with a second `investigate_question` call. Pass the returned `parent_result_id`, and pass every receipt from the latest answer back in its matching `prior_*_receipts` field (a bare `receipt_id` string is also accepted there, only together with `parent_result_id`). Take all receipts from the latest answer only, not from earlier turns.
+1. Team, project or delivery questions (for example "which teams need attention") go to `investigate_with_interpretation`, with your own model doing the interpretation and the answer writing (the client-model path, below). Put the question in plain words and omit `scope` unless you hold exact ids.
+2. If the reply asks for clarification, answer it with a second `investigate_with_interpretation` call. Pass the returned `parent_result_id`, and pass every receipt from the latest answer back in its matching `prior_*_receipts` field (a bare `receipt_id` string is also accepted there, only together with `parent_result_id`). Take all receipts from the latest answer only, not from earlier turns.
 3. Call `investigation_result` with the `result_id` exactly as returned, only when the bounded answer omitted detail you need.
 4. Call `source_evidence` with one entry of the answer's `evidence_ref_ids` list, passed as the single `evidence_ref_id` argument exactly as returned. Never build or parse an id.
 5. For a task in one repository, call `context_for_task`. The hosted server cannot see your workspace, so it needs `repository.slug` (`owner/name`). Then call `source_evidence` only with an id returned by that response.
 
+## Client-model path (`investigate_with_interpretation`)
+
+Your own model does the interpretation and the answer writing; the server runs no model for you and stores facts and evidence only.
+
+1. Fetch the prompt `interpret_question` with `prompts/get`, passing `question`. Run it on your own model.
+2. Call `investigate_with_interpretation` with `question`, `interpretation` (your model's reply, unchanged), `contract` (the prompt's `_meta` values, all three) and `synthesis: "client"`.
+3. The reply carries `synthesis_input`. Fetch the prompt `synthesize_answer` with `prompts/get` and run it on your own model with `synthesis_input.input` as the user message.
+4. Write the draft back: send the same call again with `synthesis_output` (your draft, unchanged) and `synthesis_contract` (`synthesis_input.contract` and `synthesis_input.input_sha256` from the first reply). The server makes no model call; it checks the draft against the facts.
+5. For a clarification (`clarification_required`), pick an option from `structure_needs` and call again with `parent_result_id` and the matching receipt, as in step 2 above.
+
+`investigate_question` and the prompts `investigate` and `continue_investigation` are the server-written answer path. They exist only for callers whose `tools/list` includes `investigate_question`; if it is not listed, do not call it.
+
 ## Data tools (no model runs on the server)
 
-If you are a model, you can plan the reads yourself and do the comparison, ranking and explanation. `investigate_question` is for the server's own narrative answers; use it only when you want that answer. A data tool appears in `tools/list` only when the server enables it for your credential.
+If you are a model, you can plan the reads yourself and do the comparison, ranking and explanation. A data tool appears in `tools/list` only when the server enables it for your credential.
 
 1. Call `data_catalog` first. It says what you may ask: operations, subject kinds, relationship types and limits. `sections` is optional; omit it for all sections.
 2. Call `find_subjects` to turn names into canonical ids. Four modes: list (`kind` alone, paged with `cursor`), name (`query`, exact match, optional `kinds`), `owned_by` (a team `canonical_id`; returns the repositories and projects it owns) and `handle` (one pull request number, work item key or CI run id, for example `PR 532`). Never build an id; copy it unchanged from `find_subjects` or another answer.
@@ -31,7 +43,7 @@ Read `acr://guide/data` before you plan reads.
 
 ## Before guessing
 
-Read the server's `acr://guide/*` resources for question shapes, vocabulary, the clarification flow and the data tools (`acr://guide/data`). The server also lists prompts (`investigate`, `continue_investigation`, `expand_evidence`) for the same flow.
+Read the server's `acr://guide/*` resources for question shapes, vocabulary, the clarification flow and the data tools (`acr://guide/data`). The server also lists prompts (`interpret_question`, `synthesize_answer`, `expand_evidence`) for the same flow.
 
 ## Reporting
 

@@ -17,31 +17,48 @@ Every call names what it needs explicitly.
 ```
 
 A call without a repository gets a typed `validation` refusal that names
-the field to add. `investigate_question`, `investigation_result`, and
+the field to add. `investigate_with_interpretation`, `investigation_result`, and
 `source_evidence` need no workspace at all — only the bearer token.
 
 ## The flow: investigate, then fetch, then expand
 
-1. **Ask a question with `investigate_question`.** Name the subject in the
+1. **Ask a question with `investigate_with_interpretation`.** Your own model
+   does the interpretation and the answer writing. Name the subject in the
    question text; do not guess ids.
 
-   ```json
-   {
-     "question": "Why is Ask Dev still not ready to ship?",
-     "budget": {"max_drivers": 5, "max_evidence_refs": 25},
-     "allow_clarification": true
-   }
-   ```
+   1. Fetch the prompt `interpret_question` with `prompts/get` (argument
+      `question`) and run it on your model.
+   2. Call the tool with `question`, `interpretation` (your model's reply,
+      unchanged), `contract` (the prompt's `_meta` values) and
+      `synthesis: "client"`:
+
+      ```json
+      {
+        "question": "Why is Ask Dev still not ready to ship?",
+        "interpretation": {"...": "reply of interpret_question, unchanged"},
+        "contract": {"...": "_meta values of interpret_question"},
+        "synthesis": "client",
+        "allow_clarification": true
+      }
+      ```
+
+   3. The reply carries `synthesis_input`. Fetch the prompt
+      `synthesize_answer` with `prompts/get` and run it on your model with
+      `synthesis_input.input` as the user message.
+   4. Write the draft back: send the same call again with `synthesis_output`
+      (your draft) and `synthesis_contract` (`synthesis_input.contract` and
+      `synthesis_input.input_sha256`). The server checks the draft against
+      the facts and makes no model call.
 
    The reply carries `structured.status` (`complete`, `partial`,
-   `degraded`, `clarification_required`, or `no_match`), a direct
-   judgment, principal drivers, limitations, evidence references, and a
-   `result_id`.
+   `degraded`, `clarification_required`, or `no_match`), principal drivers,
+   limitations, evidence references, and a `result_id`.
 
 2. **On `clarification_required`, answer with receipts.** Call
-   `investigate_question` again, passing `parent_result_id` and every
-   receipt the first answer returned in its matching `prior_*_receipts`
-   field. `acr://guide/conversation` (below) has the exact field names.
+   `investigate_with_interpretation` again, passing `parent_result_id` and
+   every receipt the first answer returned in its matching
+   `prior_*_receipts` field. `acr://guide/conversation` (below) has the exact
+   field names.
 
 3. **Fetch the full result with `investigation_result`** when the bounded
    answer left out detail you need:
@@ -65,7 +82,7 @@ instructions.
 
 ## Data tools: plan the reads yourself
 
-If your client is a model, use the data tools instead of `investigate_question`.
+If your client is a model, you can also plan the reads with the data tools.
 They call no model on the server side. A tool appears in `tools/list` only
 when the server enables it for your credential.
 
@@ -107,9 +124,10 @@ do:
   receipts, confirm a time window, and fetch a stored result.
 - `acr://guide/data` — how to plan reads with the data tools, the rules for
   reading their answers, and worked examples.
-- Prompt `investigate` — builds a well-formed `investigate_question` call.
-- Prompt `continue_investigation` — builds the follow-up call with
-  receipts.
+- Prompt `interpret_question` — the interpretation step of
+  `investigate_with_interpretation`; its `_meta` values are the `contract`.
+- Prompt `synthesize_answer` — the answer-writing step; run it on
+  `synthesis_input.input`.
 - Prompt `expand_evidence` — builds the `source_evidence` call.
 
 Read them from your client the same way you read any MCP resource or
@@ -121,3 +139,11 @@ The hosted server budgets requests per organization. A `429` reply
 carries `Retry-After`; wait that long before retrying. See
 [Troubleshooting](../plugins/README.md#troubleshooting) in any per-client
 README for the full error-code table.
+
+## Server-written answers (`investigate_question`)
+
+Callers whose `tools/list` includes `investigate_question` can ask the server
+to write the answer (with the prompts `investigate` and
+`continue_investigation`). The service-model gate hides that tool, and those
+prompts, from other callers, including the CI bearer. If it is not listed, use
+the client-model flow above.
