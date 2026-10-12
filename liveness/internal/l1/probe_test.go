@@ -42,7 +42,7 @@ func newFake(t *testing.T, o fakeOpts) *httptest.Server {
 		o.unauthChallenge = []string{"Bearer"}
 	}
 	srv := mcp.NewServer(&mcp.Implementation{Name: "fake-acr", Version: "9.9.9"}, nil)
-	schema := json.RawMessage(`{"type":"object","properties":{"goal":{"type":"string"},"repository":{"type":"object","properties":{"slug":{"type":"string"}}},"budget":{"type":"object"}},"required":["goal"]}`)
+	schema := json.RawMessage(`{"type":"object","properties":{"goal":{"type":"string"},"repository":{"type":"object","properties":{"slug":{"type":"string"}}},"budget":{"type":"object"},"mode":{"type":"string","enum":["a","b"]}},"required":["goal"]}`)
 	limited := o.rateLimitOnce
 	srv.AddTool(&mcp.Tool{Name: "context_for_task", Description: "ctx", InputSchema: schema},
 		func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -200,7 +200,7 @@ func TestProbeSnapshotWithExtraToolIsRed(t *testing.T) {
 	s.Tools = append(s.Tools, snapshot.Tool{Name: "extra_tool", InputSchemaDigest: "sha256:00"})
 	r := run(t, cfg(ts, s))
 	wantOnlyFailing(t, r, StepContract)
-	if d := step(t, r, StepContract).Detail; !strings.Contains(d, "missing live: tool extra_tool") {
+	if d := step(t, r, StepContract).Detail; !strings.Contains(d, "tool `extra_tool` removed or renamed") {
 		t.Errorf("detail = %q", d)
 	}
 }
@@ -209,10 +209,10 @@ func TestProbeContractFailureNamesBothVersions(t *testing.T) {
 	ts := newFake(t, fakeOpts{})
 	s := pin(t, ts)
 	s.ServerInfo.Version = "0.0.1-old"
-	s.Tools[0].InputSchemaDigest = "sha256:deadbeef"
+	s.Tools = append(s.Tools, snapshot.Tool{Name: "gone_tool", InputSchemaDigest: "sha256:00"})
 	r := run(t, cfg(ts, s))
 	wantOnlyFailing(t, r, StepContract)
-	if d := step(t, r, StepContract).Detail; !strings.HasPrefix(d, "snapshot taken at 0.0.1-old, served 9.9.9: live contract != snapshot: differs: tool ") {
+	if d := step(t, r, StepContract).Detail; !strings.HasPrefix(d, "snapshot taken at 0.0.1-old, served 9.9.9: live contract != snapshot (major): major: tool ") {
 		t.Errorf("detail = %q", d)
 	}
 }
@@ -220,20 +220,9 @@ func TestProbeContractFailureNamesBothVersions(t *testing.T) {
 func TestProbeSchemaDigestChangeIsRed(t *testing.T) {
 	ts := newFake(t, fakeOpts{})
 	s := pin(t, ts)
-	s.Tools[0].InputSchemaDigest = "sha256:deadbeef"
+	editSchema(t, s, "context_for_task", func(m map[string]any) { props(m)["extra"] = map[string]any{"type": "string"} })
 	r := run(t, cfg(ts, s))
 	wantOnlyFailing(t, r, StepContract)
-}
-
-func TestProbeLiveOnlyMemberIsRed(t *testing.T) {
-	ts := newFake(t, fakeOpts{})
-	s := pin(t, ts)
-	s.Prompts = nil
-	r := run(t, cfg(ts, s))
-	wantOnlyFailing(t, r, StepContract)
-	if d := step(t, r, StepContract).Detail; !strings.Contains(d, "not in snapshot: prompt investigate") {
-		t.Errorf("detail = %q", d)
-	}
 }
 
 func TestProbeWrongRevisionExpectationIsRed(t *testing.T) {

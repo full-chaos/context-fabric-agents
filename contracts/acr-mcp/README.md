@@ -33,6 +33,14 @@ diff. `captured_at` and `server_info.version` (build-specific) are recorded but 
 | `minor` | Something added; a schema widened. |
 | `patch` | Description text only. |
 
+## Liveness and the snapshot
+
+Liveness `c_contract` judges liveness, not equality: additive (`minor`) and
+description (`patch`) drift passes with a visible "ahead of the snapshot"
+note, so a contract widening no longer turns liveness red before the
+`contract-drift` PR merges. `major` drift (a removal, rename or tightening)
+still fails.
+
 ## Ask-dev pin rule
 
 A contract widening seen in drift is acknowledged by a **merged snapshot PR**

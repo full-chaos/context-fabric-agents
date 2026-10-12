@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -58,6 +59,7 @@ type Config struct {
 	MaxRequests int
 	MinInterval time.Duration
 	RetryWait   time.Duration
+	Notes       io.Writer
 	Now         func() time.Time
 }
 
@@ -227,7 +229,10 @@ func (p *probe) authenticated(ctx context.Context) {
 }
 
 func (p *probe) contract(ctx context.Context, cs *mcp.ClientSession) {
-	live := map[string]string{}
+	live := &snapshot.Snapshot{SchemaVersion: snapshot.SchemaVersion, Host: p.host, Negotiations: p.cfg.Snapshot.Negotiations}
+	if ir := cs.InitializeResult(); ir != nil && ir.ServerInfo != nil {
+		live.ServerInfo = snapshot.ServerInfo{Name: ir.ServerInfo.Name, Title: ir.ServerInfo.Title, Version: ir.ServerInfo.Version}
+	}
 	for tool, err := range cs.Tools(ctx, nil) {
 		if err != nil {
 			p.fail(StepContract, "tools/list: %v", err)
@@ -238,7 +243,12 @@ func (p *probe) contract(ctx context.Context, cs *mcp.ClientSession) {
 			p.fail(StepContract, "digest %s: %v", tool.Name, err)
 			return
 		}
-		live["tool "+tool.Name] = d
+		desc, err := snapshot.Digest(tool.Description)
+		if err != nil {
+			p.fail(StepContract, "digest %s: %v", tool.Name, err)
+			return
+		}
+		live.Tools = append(live.Tools, snapshot.Tool{Name: tool.Name, DescriptionDigest: desc, InputSchemaDigest: d, InputSchema: tool.InputSchema})
 	}
 	caps := cs.InitializeResult().Capabilities
 	if caps != nil && caps.Resources != nil {
@@ -247,7 +257,7 @@ func (p *probe) contract(ctx context.Context, cs *mcp.ClientSession) {
 				p.fail(StepContract, "resources/list: %v", err)
 				return
 			}
-			live["resource "+r.Name] = r.URI
+			live.Resources = append(live.Resources, snapshot.Resource{Name: r.Name, URI: r.URI})
 		}
 	}
 	if caps != nil && caps.Prompts != nil {
@@ -256,48 +266,45 @@ func (p *probe) contract(ctx context.Context, cs *mcp.ClientSession) {
 				p.fail(StepContract, "prompts/list: %v", err)
 				return
 			}
-			live["prompt "+pr.Name] = ""
+			sp := snapshot.Prompt{Name: pr.Name}
+			for _, a := range pr.Arguments {
+				sp.Arguments = append(sp.Arguments, snapshot.PromptArgument{Name: a.Name, Required: a.Required})
+			}
+			live.Prompts = append(live.Prompts, sp)
 		}
 	}
-	pinned := map[string]string{}
-	for _, t := range p.cfg.Snapshot.Tools {
-		pinned["tool "+t.Name] = t.InputSchemaDigest
-	}
-	for _, r := range p.cfg.Snapshot.Resources {
-		pinned["resource "+r.Name] = r.URI
-	}
-	for _, pr := range p.cfg.Snapshot.Prompts {
-		pinned["prompt "+pr.Name] = ""
-	}
-	var diffs []string
-	for k, v := range pinned {
-		lv, ok := live[k]
-		switch {
-		case !ok:
-			diffs = append(diffs, "missing live: "+k)
-		case lv != v:
-			diffs = append(diffs, "differs: "+k)
-		}
-	}
-	for k := range live {
-		if _, ok := pinned[k]; !ok {
-			diffs = append(diffs, "not in snapshot: "+k)
-		}
-	}
-	if len(diffs) > 0 {
-		sort.Strings(diffs)
-		served := "unknown"
-		if ir := cs.InitializeResult(); ir != nil && ir.ServerInfo != nil && ir.ServerInfo.Version != "" {
-			served = ir.ServerInfo.Version
-		}
-		taken := p.cfg.Snapshot.ServerInfo.Version
-		if taken == "" {
-			taken = "unknown"
-		}
-		p.fail(StepContract, "snapshot taken at %s, served %s: live contract != snapshot: %s", taken, served, strings.Join(diffs, ", "))
+	live.Normalize()
+
+	report := snapshot.Compare(p.cfg.Snapshot, live)
+	if !report.Drifted() {
+		p.pass(StepContract, "%d tools, %d resources, %d prompts equal the snapshot", len(p.cfg.Snapshot.Tools), len(p.cfg.Snapshot.Resources), len(p.cfg.Snapshot.Prompts))
 		return
 	}
-	p.pass(StepContract, "%d tools, %d resources, %d prompts equal the snapshot", len(p.cfg.Snapshot.Tools), len(p.cfg.Snapshot.Resources), len(p.cfg.Snapshot.Prompts))
+	served := "unknown"
+	if live.ServerInfo.Version != "" {
+		served = live.ServerInfo.Version
+	}
+	taken := p.cfg.Snapshot.ServerInfo.Version
+	if taken == "" {
+		taken = "unknown"
+	}
+	var lines []string
+	for _, c := range report.Changes {
+		lines = append(lines, fmt.Sprintf("%s: %s", c.Severity, c.Text))
+	}
+	sort.Strings(lines)
+	if report.Severity() == snapshot.Major {
+		p.fail(StepContract, "snapshot taken at %s, served %s: live contract != snapshot (%s): %s", taken, served, report.Severity(), strings.Join(lines, "; "))
+		return
+	}
+	p.note(fmt.Sprintf("c_contract: live contract is ahead of the snapshot (%s; snapshot taken at %s, served %s). The contract-drift job owns the refresh; this is not a liveness failure.\n%s", report.Severity(), taken, served, "- "+strings.Join(lines, "\n- ")))
+	p.pass(StepContract, "live contract is ahead of the snapshot (%s): %s", report.Severity(), strings.Join(lines, "; "))
+}
+
+func (p *probe) note(text string) {
+	if p.cfg.Notes != nil {
+		fmt.Fprintln(p.cfg.Notes, text)
+	}
 }
 
 var categoryRe = regexp.MustCompile(`^([a-z_]+):`)
