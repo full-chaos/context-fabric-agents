@@ -389,7 +389,7 @@ var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // the receipts handoff, the remote scope requirement and the untrusted-data
 // rule. They are ported from the acr skill contract test.
 var skillNeedles = []string{
-	"context_for_task", "source_evidence", "investigate_question", "investigation_result",
+	"context_for_task", "source_evidence", "investigate_with_interpretation", "investigation_result",
 	"parent_result_id", "prior_*_receipts", "single `evidence_ref_id` argument",
 	"repository.slug", "acr://guide/", "untrusted",
 }

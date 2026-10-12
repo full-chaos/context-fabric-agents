@@ -53,7 +53,7 @@ jobs:
         env:
           ACR_MCP_TOKEN: not-a-real-token
         run: |
-          if python3 codex/proof/mcp_status.py dev-health --expect-tool investigate_question; then
+          if python3 codex/proof/mcp_status.py dev-health --expect-tool investigate_with_interpretation; then
             echo "::error::a wrong bearer connected"
             exit 1
           fi
@@ -62,7 +62,7 @@ jobs:
           ACR_MCP_TOKEN: ${{ secrets.ACR_MCP_CI_BEARER }}
         run: |
           python3 codex/proof/mcp_status.py dev-health \
-            --expect-tool investigate_question \
+            --expect-tool investigate_with_interpretation \
             --expect-tool investigation_result \
             --expect-tool source_evidence \
             --expect-tool context_for_task
