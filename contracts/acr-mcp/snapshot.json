@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-12T18:52:18Z",
+  "captured_at": "2026-10-12T19:54:38Z",
   "host": "mcp.fullchaos.dev",
   "negotiations": [
     {
@@ -83,7 +83,7 @@
   "server_info": {
     "name": "dev-health-acr-mcp",
     "title": "Dev Health ACR",
-    "version": "0.1.1-main.1e77293c68b099bfe8a9d8b4528eb7a728c3e089"
+    "version": "0.1.1-main.7de6203643a321f9f34c643ef01d953b82df5449"
   },
   "tools": [
     {
@@ -1389,7 +1389,7 @@
                 "type": "string"
               },
               "days": {
-                "description": "Trailing days. Only with mode trailing. A range or trailing window spans at most 60 days, except that kind investment takes up to 365 days in one read (a read naming several kinds is held to the smallest maximum). 0 means not set, the same as leaving it out: a trailing window needs days from 1 to the maximum of the kinds asked.",
+                "description": "Trailing days. Only with mode trailing. The widest window one read takes depends on the kind: read it from data_catalog facts.kinds[].max_window_days before choosing days (a read naming several kinds is held to the smallest maximum). 0 means not set, the same as leaving it out: a trailing window needs days from 1 to the maximum of the kinds asked.",
                 "maximum": 365,
                 "minimum": 0,
                 "type": "integer"
@@ -1427,11 +1427,11 @@
         "title": "ACR MCP read_facts Request v1",
         "type": "object"
       },
-      "input_schema_digest": "sha256:f8d2560a19839c612213c7f9d6fa4c8a1455f54f00a1ebfdb08680faaa7b61e8",
+      "input_schema_digest": "sha256:a3cb966fa1dda2d93b9b28828c5ebb938c9960c35fcfa03217f1345e3be4c077",
       "name": "read_facts"
     },
     {
-      "description_digest": "sha256:b7f68d20ad922ba8e5e965d9e344822f9963f2ce46214d28bbdd483c87eeb42d",
+      "description_digest": "sha256:3efc604eb8729155069cc5716e1b78cef27d79f9db87121f5ba8c7abe998d940",
       "input_schema": {
         "$id": "https://contracts.fullchaos.dev/acr/v1/mcp_read_relationships_request.v1.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1457,6 +1457,10 @@
             "description": "RFC 3339 time point. Omit it to read current edges.",
             "format": "date-time",
             "type": "string"
+          },
+          "current_only": {
+            "description": "Default false. True drops BLOCKS edges whose blocking end (the from end) is done or canceled; page.dropped_inactive counts them. A blocking end with unknown status is kept.",
+            "type": "boolean"
           },
           "cursor": {
             "description": "The page.next_cursor of the previous page of the same request. Send the same other fields.",
@@ -1537,7 +1541,7 @@
         "title": "ACR MCP read_relationships Request v1",
         "type": "object"
       },
-      "input_schema_digest": "sha256:c8944fd2dbf576f3f7e5b0362dff9daff5c578d3cef342de04113c49ab54200a",
+      "input_schema_digest": "sha256:baa084ea6cd33f1d327ddf03c619e305c05075a3cbbe9b44d0182caa00f662e5",
       "name": "read_relationships"
     },
     {
