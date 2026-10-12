@@ -63,6 +63,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		cfg.Snapshot = snap
 	}
 
+	cfg.Notes = stdout
+	if path := os.Getenv("GITHUB_STEP_SUMMARY"); path != "" {
+		if f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644); err == nil {
+			defer f.Close()
+			cfg.Notes = io.MultiWriter(stdout, f)
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 	res := l1.Run(ctx, cfg)
