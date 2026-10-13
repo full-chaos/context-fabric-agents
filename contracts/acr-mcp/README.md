@@ -6,7 +6,7 @@ source says.
 
 | File | Holds |
 |---|---|
-| `snapshot.json` | `server_info`, the revision negotiated on each handshake path (`server/discover` at 2026-07-28, `initialize` at 2025-06-18), every tool with its full input schema and a canonical schema digest, resources, prompts and their arguments, and the capture time. Canonical JSON: sorted keys, stable diffs. |
+| `snapshot.json` | `server_info`, the revision negotiated on each handshake path (`server/discover` at 2026-07-28, `initialize` at 2025-06-18), every tool with its full input schema, its output schema when the server declares one, and a canonical digest of each, resources, prompts and their arguments, and the capture time. Canonical JSON: sorted keys, stable diffs. |
 | `compat.json` | Per client: pinned client version, expected negotiated revision, expected first method, and `status` (`confirmed` or `unconfirmed`). Claude Code, Codex and OpenCode v2 (`opencode-v2`) are confirmed; a client stays `unconfirmed` until a run proves it. The L2 liveness matrix (`liveness/README.md`) compares every live client's recorded first method + revision with this file; any change is red. |
 
 ## Capture and compare
@@ -29,8 +29,8 @@ diff. `captured_at` and `server_info.version` (build-specific) are recorded but 
 
 | Severity | Change |
 |---|---|
-| `major` | Tool, resource, prompt or prompt argument removed or renamed; input schema tightened (or changed in a way that is not provably a widening); new required prompt argument; negotiated revision changed. Update skills and configs, then cut a major release. |
-| `minor` | Something added; a schema widened. |
+| `major` | Tool, resource, prompt or prompt argument removed or renamed; input schema tightened (or changed in a way that is not provably a widening); output schema removed, a field removed, a required entry dropped, an enum member removed or a type changed (or changed in a way that is not provably additive); new required prompt argument; negotiated revision changed. Update skills and configs, then cut a major release. |
+| `minor` | Something added; a schema widened; an output field, required entry or enum member added; a tool newly pins an output schema. |
 | `patch` | Description text only. |
 
 ## Liveness and the snapshot
