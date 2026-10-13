@@ -129,6 +129,7 @@ func Compare(oldS, newS *Snapshot) Report {
 				add(Minor, "tool `%s` input schema widened (%s -> %s)", t.Name, p.InputSchemaDigest, t.InputSchemaDigest)
 			}
 		}
+		compareOutputSchema(p, t, add)
 		if p.DescriptionDigest != t.DescriptionDigest {
 			add(Patch, "tool `%s` description changed", t.Name)
 		}

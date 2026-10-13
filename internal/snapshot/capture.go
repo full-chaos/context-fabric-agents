@@ -109,7 +109,14 @@ func capture(ctx context.Context, endpoint, host string, hc *http.Client, now ti
 		if err != nil {
 			return nil, err
 		}
-		s.Tools = append(s.Tools, Tool{Name: tool.Name, DescriptionDigest: desc, InputSchemaDigest: digest, InputSchema: tool.InputSchema})
+		pinned := Tool{Name: tool.Name, DescriptionDigest: desc, InputSchemaDigest: digest, InputSchema: tool.InputSchema}
+		if tool.OutputSchema != nil {
+			if pinned.OutputSchemaDigest, err = Digest(tool.OutputSchema); err != nil {
+				return nil, err
+			}
+			pinned.OutputSchema = tool.OutputSchema
+		}
+		s.Tools = append(s.Tools, pinned)
 	}
 	caps := init1.Capabilities
 	if caps != nil && caps.Resources != nil {

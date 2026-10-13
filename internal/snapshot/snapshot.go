@@ -46,12 +46,15 @@ type Negotiation struct {
 	Negotiated string `json:"negotiated"`
 }
 
-// Tool pins one tool: name, description digest and the full input schema.
+// Tool pins one tool: name, description digest and the full input schema,
+// plus the output schema when the server declares one.
 type Tool struct {
-	Name              string `json:"name"`
-	DescriptionDigest string `json:"description_digest"`
-	InputSchemaDigest string `json:"input_schema_digest"`
-	InputSchema       any    `json:"input_schema"`
+	Name               string `json:"name"`
+	DescriptionDigest  string `json:"description_digest"`
+	InputSchemaDigest  string `json:"input_schema_digest"`
+	InputSchema        any    `json:"input_schema"`
+	OutputSchemaDigest string `json:"output_schema_digest,omitempty"`
+	OutputSchema       any    `json:"output_schema,omitempty"`
 }
 
 // Resource pins one listed resource.
