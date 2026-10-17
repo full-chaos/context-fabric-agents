@@ -33,6 +33,16 @@ func readFile(t *testing.T, path string) string {
 	return string(b)
 }
 
+// wantEnvFileContent is what writeEnvFile writes for token on the current
+// GOOS -- see envFileContent. POSIX: a `source`-able export line. Windows:
+// the bare token only.
+func wantEnvFileContent(token string) string {
+	if runtime.GOOS == "windows" {
+		return token + "\n"
+	}
+	return "export ACR_MCP_TOKEN='" + token + "'\n"
+}
+
 func mustMode(t *testing.T, path string) os.FileMode {
 	t.Helper()
 	fi, err := os.Stat(path)
@@ -74,7 +84,7 @@ func TestWrite_Env(t *testing.T) {
 		t.Fatal("want EnvFile set")
 	}
 	content := readFile(t, result.EnvFile)
-	want := "export ACR_MCP_TOKEN='test_token_secret_value'\n"
+	want := wantEnvFileContent("test_token_secret_value")
 	if content != want {
 		t.Errorf("env file content = %q, want %q", content, want)
 	}
@@ -146,7 +156,7 @@ func TestWrite_Codex_AppendsBlockOnce(t *testing.T) {
 	}
 
 	envContent := readFile(t, EnvFilePath(dir, TargetCodex))
-	if envContent != "export ACR_MCP_TOKEN='test_token_codex_token_2'\n" {
+	if envContent != wantEnvFileContent("test_token_codex_token_2") {
 		t.Errorf("env file not updated on the second run: %q", envContent)
 	}
 }
@@ -422,7 +432,7 @@ func TestWrite_ClaudeCode_FallsBackToManualCommandWhenCLIMissing(t *testing.T) {
 	if result.EnvFile == "" {
 		t.Fatal("want the env file written even in the fallback path")
 	}
-	if got := readFile(t, result.EnvFile); got != "export ACR_MCP_TOKEN='test_token_cc_token'\n" {
+	if got := readFile(t, result.EnvFile); got != wantEnvFileContent("test_token_cc_token") {
 		t.Errorf("env file content = %q", got)
 	}
 }
@@ -575,5 +585,74 @@ func TestWrite_ClaudeCode_UsesTheGivenMCPURL(t *testing.T) {
 	}
 	if strings.Contains(args, render.RemoteURL) {
 		t.Errorf("claude mcp add args = %q, contains the compiled-in default instead of --mcp-url", args)
+	}
+}
+
+// TestWrite_ClaudeCode_InvokesCLIWhenPresent_Windows is the Windows sibling
+// of TestWrite_ClaudeCode_InvokesCLIWhenPresent: a shell-script fake binary
+// (no extension) is unix-only, since Windows resolves a bare "claude" on
+// PATH only against an extension in PATHEXT (.cmd is the real Claude Code
+// CLI's own install shape on Windows via npm). Windows-only: exec.LookPath's
+// PATHEXT resolution, and os/exec's handling of running a .cmd file, are
+// both Windows-specific behavior this test exists to prove rather than
+// assume.
+func TestWrite_ClaudeCode_InvokesCLIWhenPresent_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows PATHEXT/.cmd resolution only")
+	}
+	dir := t.TempDir()
+	fakeBinDir := t.TempDir()
+	recorded := filepath.Join(fakeBinDir, "claude.args")
+	script := "@echo off\r\n(echo %*)>\"" + recorded + "\"\r\nexit /b 0\r\n"
+	if err := os.WriteFile(filepath.Join(fakeBinDir, "claude.cmd"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBinDir)
+
+	result, err := Write(context.Background(), TargetClaudeCode, dir, "test_token_cc_win", render.RemoteURL)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if result.ManualCommand != "" {
+		t.Errorf("ManualCommand = %q, want empty when the CLI ran", result.ManualCommand)
+	}
+	if result.ConfigWritten == "" {
+		t.Error("want ConfigWritten set when the CLI ran")
+	}
+	args := readFile(t, recorded)
+	if !strings.Contains(args, "${ACR_MCP_TOKEN}") {
+		t.Errorf("claude mcp add args = %q, want the literal ${ACR_MCP_TOKEN} reference", args)
+	}
+	if strings.Contains(args, "test_token_cc_win") {
+		t.Error("the literal token must never be passed to `claude mcp add`")
+	}
+}
+
+// TestPowerShellQuote_RoundTripsThroughRealPowerShell is the Windows
+// sibling of TestShellQuote_RoundTripsThroughARealShell: proves
+// PowerShellQuote's escaping is safe by running the quoted value through a
+// real PowerShell, not by re-parsing the quoted text ourselves.
+// Windows-only: there is no PowerShell interpreter to run this against
+// anywhere else.
+func TestPowerShellQuote_RoundTripsThroughRealPowerShell(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("requires a real PowerShell interpreter")
+	}
+	dangerous := []string{
+		`it's got an apostrophe`,
+		"has spaces and $env:PATH and ${braces}",
+		"a semicolon; and a pipe | and a backtick ` char",
+		`abc'; Remove-Item -Recurse -Force C:\ ; '`,
+	}
+	for _, d := range dangerous {
+		quoted := PowerShellQuote(d)
+		out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", "Write-Output "+quoted).Output()
+		if err != nil {
+			t.Fatalf("powershell -Command Write-Output %s: %v", quoted, err)
+		}
+		got := strings.TrimRight(string(out), "\r\n")
+		if got != d {
+			t.Errorf("PowerShellQuote round-trip: powershell printed %q, want %q (quoted form: %s)", got, d, quoted)
+		}
 	}
 }
