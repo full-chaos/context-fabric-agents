@@ -24,6 +24,13 @@ checkout:
 go run ./cmd/login --client codex
 ```
 
+On Windows, download the `-windows-amd64.exe` or `-windows-arm64.exe` asset;
+no `chmod` step is needed (Windows executables carry no POSIX executable
+bit). Windows may show an "unrecognized publisher" SmartScreen prompt for a
+freshly downloaded `.exe` — this is expected for any unsigned-by-a-known-CA
+binary; verify the release signature first (verify-release.md), then choose
+"Run anyway".
+
 ## Usage
 
 ```
@@ -48,11 +55,11 @@ Run it, then:
 
 ### `--client codex`
 
-Writes `ACR_MCP_TOKEN` to a 0600 file under your config directory and
-appends the bearer `[mcp_servers.dev-health]` table to `~/.codex/config.toml`
-(or `$CODEX_HOME/config.toml`) — the same table
-[`configs/config.bearer.toml`](../codex/configs/config.bearer.toml) ships,
-so it stays byte-identical to what `cmd/render` produces. It never
+Writes `ACR_MCP_TOKEN` to a file under your config directory (mode `0600` on
+POSIX — see Windows below) and appends the bearer `[mcp_servers.dev-health]`
+table to `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`) — the same
+table [`configs/config.bearer.toml`](../codex/configs/config.bearer.toml)
+ships, so it stays byte-identical to what `cmd/render` produces. It never
 overwrites a `dev-health` table that is already there (you may have edited
 it). Before starting Codex, source the env file:
 
@@ -68,12 +75,13 @@ if the `claude` CLI is on `PATH` — the same command
 [`plugins/README.md`](../plugins/README.md) documents for manual bearer
 setup. The header names `ACR_MCP_TOKEN` by reference; the literal token
 never reaches Claude Code's config file, only the environment variable
-does. `login` also writes `ACR_MCP_TOKEN` to a 0600 env file. If `claude`
-is not on `PATH`, **or is on `PATH` but the command fails** (most commonly:
-not signed in to Claude Code yet), `login` still succeeds — it prints the
-exact command to run yourself instead (never the token) and says why. Sign
-in with `claude login` first if that was the reason. Either way, source the
-env file before starting Claude Code:
+does. `login` also writes `ACR_MCP_TOKEN` to an env file (see Windows below
+for its Windows shape). If `claude` is not on `PATH`, **or is on `PATH` but
+the command fails** (most commonly: not signed in to Claude Code yet),
+`login` still succeeds — it prints the exact command to run yourself
+instead (never the token) and says why. Sign in with `claude login` first
+if that was the reason. Either way, source the env file before starting
+Claude Code:
 
 ```bash
 source ~/.config/context-fabric-agents/login/claude-code.env
@@ -82,8 +90,40 @@ claude
 
 ### `--client env`
 
-Writes `ACR_MCP_TOKEN` to a 0600 env file only; no client config is
-touched. Use this to wire the token into your own setup.
+Writes `ACR_MCP_TOKEN` to an env file only (`0600` on POSIX; see Windows
+below); no client config is touched. Use this to wire the token into your
+own setup.
+
+### Windows
+
+The `codex`/`claude-code`/`env` targets above all write a credential file,
+then print a command to load it — on Windows that file and command differ
+from the `source ...` shown above:
+
+- The file is `<target>.token` (e.g. `codex.token`), under
+  `%AppData%\context-fabric-agents\login`, and holds the bare token only —
+  no `export` line. PowerShell's default `ExecutionPolicy` on a fresh
+  machine (`Restricted`) blocks running *any* `.ps1` script file, including
+  via dot-source, so `login` never writes one; nothing to relax.
+- `login` prints the exact one-line command to load it, which works under
+  the default policy because it is typed/pasted at the prompt, not run as a
+  script file:
+
+  ```powershell
+  $env:ACR_MCP_TOKEN = (Get-Content -Raw <path login printed>).Trim()
+  codex   # or: claude
+  ```
+
+- Windows carries no POSIX permission bits, so `login` never claims a
+  `0600`-equivalent guarantee there. The file is protected only by
+  whatever default NTFS permissions its parent directory (your user
+  profile's `%AppData%`) already grants — `login` does not set an
+  explicit ACL, and that inherited protection is not independently
+  verified.
+- `--client claude-code`'s `claude mcp add` invocation runs the same way on
+  Windows (a real Claude Code CLI install, `.cmd`/`.exe` on `PATH`); the
+  fallback manual command it prints is PowerShell-quoted instead of
+  POSIX-shell-quoted.
 
 ### `--client stdout`
 
@@ -95,7 +135,8 @@ it.
 ## What `login` never does
 
 - Never prints the token, except `--client stdout`'s single line.
-- Never writes a credential file that is not `0600`, and refuses to write
+- Never writes a credential file that is not `0600` on POSIX (Windows: see
+  the Windows section above — no explicit ACL is set), and refuses to write
   through a pre-existing symlink at that path.
 - Never polls past the device code's `expires_in` or your `--timeout`,
   whichever comes first.

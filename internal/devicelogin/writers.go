@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -72,10 +73,37 @@ type WriteResult struct {
 	Warning string
 }
 
-// EnvFilePath returns the 0600 env file Write uses for target, under dir
+// EnvFilePath returns the credential file Write uses for target, under dir
 // (the caller's config directory; StateDir() gives the default).
+//
+// On POSIX this is a `source`-able shell env file (`<target>.env`, an
+// `export NAME=value` line, 0600). On Windows it is `<target>.token`,
+// holding only the bare token: PowerShell's default ExecutionPolicy on a
+// fresh machine (Restricted) blocks running a .ps1 file at all, including
+// via dot-source, so there is no script file to source -- the token is
+// loaded into $env: with one interactive command instead (see the printed
+// hint in cmd/login). Windows relies on the file inheriting its parent
+// directory's default NTFS permissions (the owning user's profile); this
+// package does not set an explicit ACL, and that inherited protection is
+// not independently verified here.
 func EnvFilePath(dir string, target TargetClient) string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(dir, string(target)+".token")
+	}
 	return filepath.Join(dir, string(target)+".env")
+}
+
+// envFileContent returns what writeEnvFile writes for token, shaped for the
+// target OS's loading path (see EnvFilePath). POSIX: a `source`-able
+// `export NAME=value` line, the value ShellQuoted so a token containing
+// shell syntax can never execute when sourced (cf-6235-r3 finding 1).
+// Windows: the bare token and nothing else -- the file is never executed or
+// dot-sourced, so there is no shell-syntax sink to guard here.
+func envFileContent(token string) string {
+	if runtime.GOOS == "windows" {
+		return token + "\n"
+	}
+	return fmt.Sprintf("export %s=%s\n", render.TokenEnvVar, ShellQuote(token))
 }
 
 // StateDir is the default directory Write's env files and lock state live
@@ -102,14 +130,12 @@ func writeEnvFile(path, token string) error {
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("%s is a symlink, refusing to write a credential through it", path)
 	}
-	// ShellQuote the token, not just interpolate it: the file is `source`d
-	// by a real shell (this package prints exactly that instruction), and
-	// a token value the server returns is not otherwise validated -- a
-	// token containing shell syntax would execute when sourced
-	// (cf-6235-r3 finding 1). Every value this package writes into a
-	// shell-interpreted sink (this env file, the printed claude command,
-	// the printed source hint) goes through the same ShellQuote helper.
-	content := fmt.Sprintf("export %s=%s\n", render.TokenEnvVar, ShellQuote(token))
+	// See envFileContent: POSIX writes a `source`-able, ShellQuoted export
+	// line (every value this package writes into a shell-interpreted sink
+	// -- this env file, the printed claude command, the printed source
+	// hint -- goes through the same ShellQuote helper); Windows writes the
+	// bare token, never executed or sourced.
+	content := envFileContent(token)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
@@ -350,11 +376,33 @@ func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// PowerShellQuote returns s as a single PowerShell single-quoted token.
+// PowerShell's single-quoted strings are literal (no `$var` interpolation,
+// matching POSIX single quotes), but an embedded quote character is
+// escaped by doubling it, not by POSIX's close-escape-reopen sequence --
+// the two escaping rules are not interchangeable, so a printed command
+// pasted into PowerShell needs this, not ShellQuote.
+func PowerShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// quoteForPrintedCommand quotes s for the host's default interactive shell
+// -- PowerShell on Windows, POSIX everywhere else. This affects only what
+// is PRINTED for a human to paste: the actual `claude mcp add` invocation
+// (runClaudeMCPAdd) passes args directly to exec.Command, never through a
+// shell, so it is unaffected by either OS's quoting rules.
+func quoteForPrintedCommand(s string) string {
+	if runtime.GOOS == "windows" {
+		return PowerShellQuote(s)
+	}
+	return ShellQuote(s)
+}
+
 func claudeMCPAddCommand(mcpURL string) string {
 	args := claudeMCPAddArgs(mcpURL)
 	quoted := make([]string, len(args))
 	for i, a := range args {
-		quoted[i] = ShellQuote(a)
+		quoted[i] = quoteForPrintedCommand(a)
 	}
 	return "claude " + strings.Join(quoted, " ")
 }

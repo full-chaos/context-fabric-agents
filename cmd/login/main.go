@@ -28,6 +28,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -146,7 +147,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if result.EnvFile != "" {
-		fmt.Fprintf(stderr, "login: wrote %s (%s=<token>, mode 0600)\n", result.EnvFile, render.TokenEnvVar)
+		if runtime.GOOS == "windows" {
+			// Windows has no POSIX permission bits to claim; the file is
+			// protected only by whatever default NTFS permissions its
+			// parent directory (the user's profile) already carries. This
+			// package sets no explicit ACL and that inherited protection
+			// is not independently verified -- say so plainly rather than
+			// print a "mode 0600"-style claim that does not apply here.
+			fmt.Fprintf(stderr, "login: wrote %s (holds the bare %s value; protected only by your Windows user profile's default permissions)\n", result.EnvFile, render.TokenEnvVar)
+		} else {
+			fmt.Fprintf(stderr, "login: wrote %s (%s=<token>, mode 0600)\n", result.EnvFile, render.TokenEnvVar)
+		}
 	}
 	if result.ConfigWritten != "" {
 		fmt.Fprintf(stderr, "login: wired %s\n", result.ConfigWritten)
@@ -165,7 +176,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "login: WARNING: %s\n", result.Warning)
 	}
 	if result.EnvFile != "" {
-		fmt.Fprintf(stderr, "login: before starting %s, run: source %s\n", target, devicelogin.ShellQuote(result.EnvFile))
+		if runtime.GOOS == "windows" {
+			// No .ps1 script file is written or dot-sourced: PowerShell's
+			// default ExecutionPolicy on a fresh machine (Restricted)
+			// blocks running a script file at all, including via
+			// dot-source. This is one interactive command a user types at
+			// the prompt -- ExecutionPolicy only restricts running .ps1
+			// files, never commands typed or pasted directly -- so it
+			// works under the default policy with nothing to relax. It
+			// never prints the token value itself.
+			fmt.Fprintf(stderr, "login: before starting %s, run:\n\n    $env:%s = (Get-Content -Raw %s).Trim()\n\n", target, render.TokenEnvVar, devicelogin.PowerShellQuote(result.EnvFile))
+		} else {
+			fmt.Fprintf(stderr, "login: before starting %s, run: source %s\n", target, devicelogin.ShellQuote(result.EnvFile))
+		}
 	}
 	return 0
 }
