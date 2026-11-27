@@ -97,8 +97,10 @@ when the server enables it for your credential.
    `depth`, `as_of`, `limit`). A `cursor` is opaque: send it back unchanged.
    Restricted credentials get counts for what they may not read
    (`edges_not_visible`, `rows_withheld`).
-4. `run_operation` is not served yet; it will need the `data:read` scope
-   (see [login](login.md)).
+4. `run_operation` (one allowlisted operation by name, with its `variables`) and
+   `graphql_query` (one GraphQL query over the allowed schema, the `data_catalog`
+   section `schema`; queries only, never send `orgId`). Both need the `data:read`
+   scope (see [login](login.md)).
 
 The server serves no person-level data. `acr://guide/data` has the full rules.
 
