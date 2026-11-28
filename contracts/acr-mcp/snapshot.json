@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-24T05:22:05Z",
+  "captured_at": "2026-11-28T05:21:42Z",
   "host": "mcp.fullchaos.dev",
   "negotiations": [
     {
@@ -89,6 +89,10 @@
   ],
   "resources": [
     {
+      "name": "dev-health",
+      "uri": "skill://dev-health/SKILL.md"
+    },
+    {
       "name": "guide-catalog",
       "uri": "acr://guide/catalog"
     },
@@ -129,7 +133,7 @@
   "server_info": {
     "name": "dev-health-acr-mcp",
     "title": "Dev Health ACR",
-    "version": "0.1.1-main.e67c412859c253f9f21b4a34d82806813dc9a703"
+    "version": "0.1.1-main.53012e4417bf42e6c90b101036e5b8b676f00cfe"
   },
   "tools": [
     {
